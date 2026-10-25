@@ -73,6 +73,8 @@ mod app {
         if let Ok(exe) = std::env::current_exe() {
             let _ = std::fs::remove_file(exe.with_extension("exe.old")); // resto di un aggiornamento
         }
+        // installer scaricato da un aggiornamento precedente (se e' ancora in uso resta fino al prossimo avvio)
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("Trascrittore-Update"));
         let cfg = config::load();
         apply_hotkey(&cfg.hotkey);
 

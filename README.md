@@ -92,3 +92,12 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 ## Test
 
 `cargo test` verifica il parsing della configurazione, i prompt per app, il salvataggio della chiave in `.env`, la lettura della release di aggiornamento (URL ammessi, SHA-256, marcatore `[installer]`), il passaggio ai modelli di riserva, la scelta della regola per app (inclusi `send_enter` e `raw`) e il parsing della scorciatoia. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.
+
+## Spazio occupato
+
+- **Audio**: la registrazione sta solo in RAM e non viene mai scritta su disco. Il buffer e' limitato da `max_seconds` (120 s: circa 23 MB a 48 kHz durante la registrazione, qualche MB per una dettatura normale) e viene liberato appena finita l'elaborazione.
+- **Log**: `trascrittore.log` contiene solo errori (mai testo dettato ne' chiavi) e viene azzerato oltre 256 KB.
+- **File fissi**: `config.toml` e `.env` in `%APPDATA%\Trascrittore`, pochi KB. Il programma installato e' un solo `.exe` di pochi MB.
+- **Aggiornamenti**: il nuovo `.exe` viene scaricato accanto al vecchio e il file `.old` viene cancellato al riavvio successivo; l'eventuale installer scaricato in `%TEMP%\Trascrittore-Update` viene cancellato all'avvio successivo.
+- **Contatori di utilizzo**: sono in memoria (poche righe per modello) e si azzerano alla chiusura.
+- A riposo il programma non fa nulla (icona nella tray e un controllo aggiornamenti ogni 6 ore, se hai il token); la finestra impostazioni esiste solo quando e' aperta.
