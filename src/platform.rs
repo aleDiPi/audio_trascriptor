@@ -10,13 +10,23 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const CF_UNICODETEXT: u32 = 13;
 
-/// Istanza unica: false se un'altra copia e' gia' in esecuzione.
-pub fn single_instance() -> bool {
+/// Istanza unica: false se un'altra copia e' gia' in esecuzione. Dopo un aggiornamento
+/// (`wait_old`) si attende qualche secondo che la vecchia copia finisca di chiudersi.
+pub fn single_instance(wait_old: bool) -> bool {
     let name: Vec<u16> = "Local\\TrascrittoreAudioSingleInstance\0".encode_utf16().collect();
-    unsafe {
-        let h = CreateMutexW(null_mut(), 0, name.as_ptr());
-        !h.is_null() && GetLastError() != ERROR_ALREADY_EXISTS
+    for _ in 0..if wait_old { 40 } else { 1 } {
+        unsafe {
+            let h = CreateMutexW(null_mut(), 0, name.as_ptr());
+            if !h.is_null() && GetLastError() != ERROR_ALREADY_EXISTS {
+                return true;
+            }
+            if !h.is_null() {
+                CloseHandle(h);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
     }
+    false
 }
 
 /// (nome exe in minuscolo, titolo finestra) dell'app in primo piano.
@@ -168,4 +178,17 @@ pub fn set_autostart(on: bool) {
             let _ = k.delete_value(RUN_NAME);
         }
     }
+}
+
+/// Avvia l'installer in silenzio dopo 2 secondi (il tempo di far chiudere questo programma).
+pub fn run_installer_after_exit(path: &std::path::Path) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    let quoted = path.display().to_string().replace('\'', "''");
+    let script = format!("Start-Sleep -Seconds 2; & '{quoted}' /VERYSILENT /SUPPRESSMSGBOXES /NORESTART");
+    std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
