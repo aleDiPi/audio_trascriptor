@@ -290,7 +290,18 @@ pub fn set_debug(on: bool) {
     if let Ok(text) = std::fs::read_to_string(&path) {
         let _ = std::fs::write(&path, set_toml_bool(&text, "debug", on));
     }
-    log(&format!("modalita' debug {}", if on { "attivata" } else { "disattivata" }));
+    if on {
+        log("modalita' debug attivata");
+    } else {
+        delete_logs();
+    }
+}
+
+/// Cancella il log e quello ruotato (`.log.1`).
+pub fn delete_logs() {
+    let path = log_path();
+    let _ = std::fs::remove_file(path.with_extension("log.1"));
+    let _ = std::fs::remove_file(path);
 }
 
 /// Imposta `chiave = true/false` al livello principale del TOML, senza toccare commenti e tabelle.

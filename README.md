@@ -50,6 +50,8 @@ Se `config.toml` non e' nella cartella corrente o accanto all'exe, il programma 
 
 ## Modalita' debug e log
 
+Quando disattivi la modalita' debug, i file di log gia' presenti (`trascrittore.log` e `trascrittore.log.1`) vengono cancellati.
+
 Nei primi test attiva la **modalita' debug**: dal menu dell'icona nella tray (*Modalita' debug*), dalla finestra Impostazioni oppure con `debug = true` in `config.toml`. Il log (*Apri log* nel menu o nelle Impostazioni) si trova in `%APPDATA%\Trascrittore\trascrittore.log` (accanto a `config.toml`; la finestra Impostazioni ne mostra il percorso) e contiene data e ora UTC, e per ogni dettatura:
 
 - hotkey premuta/rilasciata e app in primo piano (nome del programma e titolo della finestra);
