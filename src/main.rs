@@ -31,6 +31,8 @@ mod hotkey;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod levels;
 #[cfg(windows)]
+mod localstt;
+#[cfg(windows)]
 mod overlay;
 #[cfg(windows)]
 mod sounds;
@@ -288,9 +290,9 @@ mod app {
 
     fn process(wav: Vec<u8>, cfg: &config::Config, exe: &str, title: &str) -> Result<(), String> {
         let order = providers::parse_order(&cfg.providers);
-        let stt_order: Vec<Provider> = order.iter().copied().filter(|p| p.supports_stt()).collect();
+        let stt_order = providers::stt_order(&order);
         config::debug(|| format!("invio audio: {} KB, lingua '{}', servizi in ordine {:?}", wav.len() / 1024, cfg.language, stt_order.iter().map(|p| p.name()).collect::<Vec<_>>()));
-        let ((text, stt_model), stt_provider) = providers::run(&stt_order, |p| config::provider_key(p).is_some(), |p| {
+        let ((text, stt_model), stt_provider) = providers::run(&stt_order, config::provider_ready, |p| {
             let key = config::provider_key(p).unwrap_or_default();
             match p {
                 Provider::Groq => {
@@ -302,6 +304,15 @@ mod app {
                     c.transcribe(wav.clone(), &cfg.openai_stt_model, &cfg.language).map(|t| (t, cfg.openai_stt_model.clone()))
                 }
                 Provider::Anthropic => Err(client_err(p, "non trascrive l'audio".into())),
+                Provider::Local => {
+                    let size = config::local_size();
+                    let t = std::time::Instant::now();
+                    let samples = localstt::wav_to_samples(&wav).map_err(|e| client_err(p, e))?;
+                    let text = localstt::transcribe(&localstt::model_path(config::dir(), size), &samples, &cfg.language).map_err(|e| client_err(p, e))?;
+                    config::debug(|| format!("trascrizione locale ({}) in {:.1} s", size.id(), t.elapsed().as_secs_f32()));
+                    providers::record_use(p, 0);
+                    Ok((text, format!("whisper {}", size.id())))
+                }
             }
         })?;
         let stt_model = format!("{} {}", stt_provider.name(), stt_model);
@@ -323,8 +334,9 @@ mod app {
             let prompt = cfg.system_prompt(rule);
             config::debug_text_long("prompt di sistema inviato all'AI", &prompt);
             config::debug_text("messaggio utente inviato all'AI", &format!("<trascrizione>{text}</trascrizione>"));
-            config::debug(|| format!("servizi AI in ordine: {:?}, temperatura 0.2", order.iter().map(|p| p.name()).collect::<Vec<_>>()));
-            let refined = providers::run(&order, |p| config::provider_key(p).is_some(), |p| {
+            let llm_order = providers::llm_order(&order);
+            config::debug(|| format!("servizi AI in ordine: {:?}, temperatura 0.2", llm_order.iter().map(|p| p.name()).collect::<Vec<_>>()));
+            let refined = providers::run(&llm_order, config::provider_ready, |p| {
                 let key = config::provider_key(p).unwrap_or_default();
                 match p {
                     Provider::Groq => {
@@ -339,6 +351,7 @@ mod app {
                         let c = anthropic::Anthropic::new(key).map_err(|e| client_err(p, e))?;
                         c.refine(&cfg.anthropic_llm_model, &prompt, &text).map(|t| (t, cfg.anthropic_llm_model.clone()))
                     }
+                    Provider::Local => Err(client_err(p, "non corregge il testo".into())),
                 }
             });
             match refined {

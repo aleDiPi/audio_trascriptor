@@ -3,11 +3,12 @@
 //! distrutta alla chiusura, quindi da chiusa resta solo un thread in attesa (nessuna CPU).
 
 use crate::providers::{self, Provider};
-use crate::{anthropic, config, oai, release, sounds, updater, usage};
+use crate::{anthropic, config, localstt, oai, release, sounds, updater, usage};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
 use std::sync::{Condvar, Mutex, Once};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 slint::include_modules!();
 
@@ -20,6 +21,9 @@ static LAYOUT: Mutex<Vec<(Provider, bool)>> = Mutex::new(Vec::new());
 static TILE_UI: Mutex<Vec<(Provider, String, bool, i32)>> = Mutex::new(Vec::new());
 /// Titoli e testi dei prompt (stessi indici della lista a discesa).
 static CASES: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+/// Download del modello locale in corso: (dimensione, scaricati, totale).
+static DL: Mutex<Option<(localstt::Size, u64, Option<u64>)>> = Mutex::new(None);
+static CANCEL: AtomicBool = AtomicBool::new(false);
 static READY: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
 
 thread_local! {
@@ -91,6 +95,7 @@ fn create_window() -> Result<Ui, slint::PlatformError> {
     win.set_prompt_text(cases.first().map(|(_, t)| norm(t)).unwrap_or_default().into());
     *CASES.lock().unwrap() = cases;
     win.set_tiles(ModelRc::new(VecModel::<Tile>::default()));
+    win.set_local_size_labels(ModelRc::new(VecModel::from(localstt::SIZES.iter().map(|z| SharedString::from(z.label())).collect::<Vec<_>>())));
     win.set_ver_info(update_info_initial().into());
     win.set_token_status(token_status().into());
     // i controlli dei suoni si impostano solo qui: aggiornarli col timer sposterebbe il cursore mentre lo si trascina
@@ -153,11 +158,17 @@ struct TileData {
     result: String,
     busy: bool,
     clear_seq: i32,
+    is_local: bool,
+    local_index: i32,
+    downloading: bool,
+    progress: f32,
+    local_detail: String,
 }
 
 /// Contenuto della tessera di un servizio. `status` e' (pronto, testo) e `usage` la riga dei contatori.
-fn tile_data(p: Provider, cfg: &config::Config, enabled: bool, key: Option<&str>, status: (bool, String), usage: &str) -> TileData {
+fn tile_data(p: Provider, cfg: &config::Config, enabled: bool, key: Option<&str>, available: bool, status: (bool, String), usage: &str) -> TileData {
     let (stt, llm, editable) = match p {
+        Provider::Local => (format!("whisper {}", cfg.local_model), String::new(), false),
         Provider::Groq => (cfg.stt_models().join(", "), cfg.llm_models().join(", "), false),
         Provider::OpenAi => (cfg.openai_stt_model.clone(), cfg.openai_llm_model.clone(), true),
         Provider::Anthropic => (String::new(), cfg.anthropic_llm_model.clone(), true),
@@ -166,11 +177,16 @@ fn tile_data(p: Provider, cfg: &config::Config, enabled: bool, key: Option<&str>
     if !p.supports_stt() {
         info.push_str(" Solo correzione del testo: non trascrive l'audio.");
     }
+    if p.is_local() {
+        info = format!(
+            "Trascrive sul tuo PC: nessun dato esce e non serve credito. Piu' lento su CPU; il modello si carica solo mentre trascrive. Senza un servizio AI in rete il testo non viene corretto: viene incollata la trascrizione grezza. {usage}"
+        );
+    }
     TileData {
         id: p.id().into(),
         name: p.name().into(),
         enabled,
-        has_key: key.is_some(),
+        has_key: available,
         ready: status.0,
         status: status.1,
         key_note: key.map_or(String::new(), |k| format!("Chiave salvata: {}. Per cambiarla incollane una nuova.", config::mask_key(k))),
@@ -182,6 +198,11 @@ fn tile_data(p: Provider, cfg: &config::Config, enabled: bool, key: Option<&str>
         result: String::new(),
         busy: false,
         clear_seq: 0,
+        is_local: p.is_local(),
+        local_index: localstt::SIZES.iter().position(|z| *z == localstt::Size::parse(&cfg.local_model)).unwrap_or(1) as i32,
+        downloading: false,
+        progress: -1.0,
+        local_detail: String::new(),
     }
 }
 
@@ -203,6 +224,11 @@ impl From<TileData> for Tile {
             result: t.result.into(),
             busy: t.busy,
             clear_seq: t.clear_seq,
+            is_local: t.is_local,
+            local_index: t.local_index,
+            downloading: t.downloading,
+            progress: t.progress,
+            local_detail: t.local_detail.into(),
         }
     }
 }
@@ -223,12 +249,14 @@ fn model_of(cfg: &config::Config, p: Provider, stt: bool) -> String {
         (Provider::OpenAi, true) => cfg.openai_stt_model.clone(),
         (Provider::OpenAi, false) => cfg.openai_llm_model.clone(),
         (Provider::Anthropic, _) => cfg.anthropic_llm_model.clone(),
+        (Provider::Local, _) => format!("whisper {}", cfg.local_model),
     }
 }
 
-fn home_data(cfg: &config::Config, order: &[Provider], has_key: impl Fn(Provider) -> bool + Copy) -> HomeData {
-    let pick = |stt: bool| match providers::first_active(order, has_key, stt) {
+fn home_data(cfg: &config::Config, order: &[Provider], ready: impl Fn(Provider) -> bool + Copy) -> HomeData {
+    let pick = |stt: bool| match providers::first_active(order, ready, stt) {
         Some(p) => format!("{}\n{}", model_of(cfg, p, stt), p.name()),
+        None if !stt && providers::first_active(order, ready, true).is_some() => "Nessuna: testo non corretto".to_string(),
         None => "Nessuna chiave configurata".to_string(),
     };
     HomeData {
@@ -237,7 +265,10 @@ fn home_data(cfg: &config::Config, order: &[Provider], has_key: impl Fn(Provider
         order: order.iter().enumerate().map(|(i, p)| format!("{}. {}", i + 1, p.name())).collect::<Vec<_>>().join("   "),
         keys: providers::ALL
             .iter()
-            .map(|p| format!("{}: {}", p.name(), if has_key(*p) { "chiave presente" } else { "nessuna chiave" }))
+            .map(|p| {
+                let (yes, no) = if p.is_local() { ("modello scaricato", "modello non scaricato") } else { ("chiave presente", "nessuna chiave") };
+                format!("{}: {}", p.name(), if ready(*p) { yes } else { no })
+            })
             .collect::<Vec<_>>()
             .join("  |  "),
         hotkey: format!(
@@ -256,6 +287,16 @@ fn home_usage(order: &[Provider], status: impl Fn(Provider) -> (bool, String), u
         .map(|p| format!("{}: {}  -  {}", p.name(), status(*p).1, usage(*p).split(". ").next().unwrap_or("").trim_end_matches('.')))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Riga sotto la tendina del modello locale: scaricato o no, e spazio occupato.
+fn local_detail(size: localstt::Size, downloaded: bool, disk: u64) -> String {
+    let disk_note = if disk > 0 { format!(" Spazio occupato dai modelli: {}.", localstt::format_bytes(disk)) } else { String::new() };
+    if downloaded {
+        format!("Modello {} scaricato e pronto.{disk_note}", size.id())
+    } else {
+        format!("Modello {} non ancora scaricato (circa {}): premi Scarica.{disk_note}", size.id(), localstt::format_bytes(size.approx_bytes()))
+    }
 }
 
 /// Posizione di uno stile nell'elenco a discesa dei suoni.
@@ -291,12 +332,28 @@ fn build_tiles(cfg: &config::Config) -> Vec<Tile> {
         .iter()
         .map(|(p, on)| {
             let key = config::provider_key(*p);
-            let status = providers::status(*p, key.is_some());
+            let available = config::provider_ready(*p);
+            let status = providers::status(*p, available);
             let (result, busy, seq) = tile_ui(*p);
-            let mut t = tile_data(*p, cfg, *on, key.as_deref(), status, &providers::usage_line(*p));
+            let mut t = tile_data(*p, cfg, *on, key.as_deref(), available, status, &providers::usage_line(*p));
             t.result = norm(&result);
             t.busy = busy;
             t.clear_seq = seq;
+            if p.is_local() {
+                let size = localstt::Size::parse(&cfg.local_model);
+                let dl = *DL.lock().unwrap();
+                t.downloading = dl.is_some();
+                t.progress = dl.and_then(|(_, done, total)| localstt::fraction(done, total)).unwrap_or(-1.0);
+                t.local_detail = match dl {
+                    Some((z, done, total)) => format!(
+                        "Scarico {}: {}{}",
+                        z.id(),
+                        localstt::format_bytes(done),
+                        total.map_or(String::new(), |t| format!(" su {}", localstt::format_bytes(t)))
+                    ),
+                    None => local_detail(size, available, localstt::disk_usage(config::dir())),
+                };
+            }
             t.into()
         })
         .collect()
@@ -325,13 +382,12 @@ fn refresh(win: &SettingsWindow) {
     let cfg = config::load();
     sync_tiles(win, build_tiles(&cfg));
     let order = enabled_order(&LAYOUT.lock().unwrap());
-    let has_key = |p: Provider| config::provider_key(p).is_some();
-    let h = home_data(&cfg, &order, has_key);
+    let h = home_data(&cfg, &order, config::provider_ready);
     win.set_home_ai(h.ai.into());
     win.set_home_stt(h.stt.into());
     win.set_home_order(h.order.clone().into());
     win.set_home_keys(h.keys.into());
-    win.set_home_usage(home_usage(&order, |p| providers::status(p, config::provider_key(p).is_some()), providers::usage_line).into());
+    win.set_home_usage(home_usage(&order, |p| providers::status(p, config::provider_ready(p)), providers::usage_line).into());
     win.set_home_hotkey(h.hotkey.into());
     win.set_home_version(version_line().into());
     win.set_home_updates(update_state_line().into());
@@ -378,12 +434,12 @@ fn wire(win: &SettingsWindow) {
     let weak = win.as_weak();
 
     win.on_open_keys(|id| {
-        if let Some(p) = provider_by_id(&id) {
+        if let Some(p) = provider_by_id(&id).filter(|p| !p.is_local()) {
             open_url(p.keys_url());
         }
     });
     win.on_open_billing(|id| {
-        if let Some(p) = provider_by_id(&id) {
+        if let Some(p) = provider_by_id(&id).filter(|p| !p.is_local()) {
             open_url(p.billing_url());
         }
     });
@@ -486,6 +542,70 @@ fn wire(win: &SettingsWindow) {
         }
     });
 
+    win.on_set_local_size({
+        let weak = weak.clone();
+        move |i| {
+            if let Some(z) = localstt::SIZES.get(i.max(0) as usize) {
+                config::set_local_model(*z);
+            }
+            if let Some(w) = weak.upgrade() {
+                refresh(&w);
+            }
+        }
+    });
+
+    win.on_delete_local({
+        let weak = weak.clone();
+        move || {
+            let size = config::local_size();
+            localstt::delete(config::dir(), size);
+            set_tile_ui(Provider::Local, |x| x.1 = format!("Modello {} eliminato.", size.id()));
+            if let Some(w) = weak.upgrade() {
+                refresh(&w);
+            }
+        }
+    });
+
+    win.on_cancel_download(|| CANCEL.store(true, Ordering::Relaxed));
+
+    win.on_download_local({
+        let weak = weak.clone();
+        move || {
+            let size = config::local_size();
+            {
+                let mut dl = DL.lock().unwrap();
+                if dl.is_some() || localstt::is_downloaded(config::dir(), size) {
+                    return;
+                }
+                *dl = Some((size, 0, None));
+            }
+            CANCEL.store(false, Ordering::Relaxed);
+            set_tile_ui(Provider::Local, |x| x.1 = format!("Scarico il modello {} da Hugging Face...", size.id()));
+            if let Some(w) = weak.upgrade() {
+                refresh(&w);
+            }
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let mut last = Instant::now();
+                let r = localstt::download(config::dir(), size, &CANCEL, |done, total| {
+                    *DL.lock().unwrap() = Some((size, done, total));
+                    if last.elapsed() >= Duration::from_millis(300) {
+                        last = Instant::now();
+                        refresh_in_loop(&weak);
+                    }
+                });
+                *DL.lock().unwrap() = None;
+                let msg = match r {
+                    Ok(()) => format!("Modello {} scaricato: la trascrizione locale e' pronta.", size.id()),
+                    Err(e) => format!("Download non riuscito: {e}"),
+                };
+                config::log(&msg);
+                set_tile_ui(Provider::Local, |x| x.1 = msg);
+                refresh_in_loop(&weak);
+            });
+        }
+    });
+
     win.on_save_models({
         let weak = weak.clone();
         move |id, stt, llm| {
@@ -493,7 +613,7 @@ fn wire(win: &SettingsWindow) {
             match p {
                 Provider::OpenAi => config::set_provider_models(&stt, &llm, ""),
                 Provider::Anthropic => config::set_provider_models("", "", &llm),
-                Provider::Groq => {}
+                Provider::Groq | Provider::Local => {}
             }
             set_tile_ui(p, |x| x.1 = "Modelli salvati: valgono dalla prossima dettatura. Campi vuoti o con spazi ignorati.".into());
             if let Some(w) = weak.upgrade() {
@@ -718,6 +838,7 @@ fn verify_provider(p: Provider, typed: String) -> String {
         Provider::Anthropic => anthropic::Anthropic::new(key.clone()).and_then(|a| a.list_models().map_err(|e| e.to_string())),
         Provider::Groq => oai::Oai::groq(key.clone()).and_then(|g| g.list_models().map_err(|e| e.to_string())),
         Provider::OpenAi => oai::Oai::new(p, key.clone()).and_then(|o| o.list_models().map_err(|e| e.to_string())),
+        Provider::Local => return "Il servizio locale non usa chiavi.".into(),
     };
     let ids = match listed {
         Ok(v) => v,
@@ -734,6 +855,7 @@ fn verify_provider(p: Provider, typed: String) -> String {
         Provider::Groq => vec![cfg.stt_model.as_str(), cfg.llm_model.as_str()],
         Provider::OpenAi => vec![cfg.openai_llm_model.as_str(), cfg.openai_stt_model.as_str()],
         Provider::Anthropic => vec![cfg.anthropic_llm_model.as_str()],
+        Provider::Local => vec![],
     };
     format!("Chiave {} valida{}.\n{}", p.name(), if saved { " e salvata" } else { "" }, model_lines(&wanted, &ids).join("\n"))
 }
@@ -784,10 +906,10 @@ mod tests {
     #[test]
     fn layout_starts_with_enabled_services_in_priority_order() {
         let l = initial_layout(&["openai".into(), "groq".into()]);
-        assert_eq!(names(&l), vec![("openai", true), ("groq", true), ("anthropic", false)]);
+        assert_eq!(names(&l), vec![("openai", true), ("groq", true), ("anthropic", false), ("local", false)]);
         assert_eq!(enabled_order(&l), vec![Provider::OpenAi, Provider::Groq]);
         // config vuota o sbagliata: solo Groq in uso
-        assert_eq!(names(&initial_layout(&[])), vec![("groq", true), ("openai", false), ("anthropic", false)]);
+        assert_eq!(names(&initial_layout(&[])), vec![("groq", true), ("openai", false), ("anthropic", false), ("local", false)]);
     }
 
     #[test]
@@ -807,11 +929,11 @@ mod tests {
     #[test]
     fn tile_shows_models_key_and_status_per_service() {
         let cfg = config::Config::default();
-        let t = tile_data(Provider::Groq, &cfg, true, Some("gsk_abcd1234"), (true, "Pronto".into()), "Dall'avvio: 0 chiamate, 0 token.");
+        let t = tile_data(Provider::Groq, &cfg, true, Some("gsk_abcd1234"), true, (true, "Pronto".into()), "Dall'avvio: 0 chiamate, 0 token.");
         assert!(t.has_key && t.ready && !t.models_editable && t.supports_stt);
         assert!(t.key_note.contains("...1234"));
         assert!(t.llm_model.contains("openai/gpt-oss-120b") && t.llm_model.contains("gpt-oss-20b"));
-        let a = tile_data(Provider::Anthropic, &cfg, false, None, (false, "Nessuna chiave".into()), "x");
+        let a = tile_data(Provider::Anthropic, &cfg, false, None, false, (false, "Nessuna chiave".into()), "x");
         assert!(!a.has_key && a.models_editable && !a.supports_stt && a.stt_model.is_empty());
         assert!(a.info.contains("Solo correzione del testo"));
         assert_eq!(a.llm_model, cfg.anthropic_llm_model);
@@ -831,6 +953,36 @@ mod tests {
         assert!(h.hotkey.starts_with("ctrl+win"));
         let none = home_data(&cfg, &order, |_| false);
         assert_eq!(none.ai, "Nessuna chiave configurata");
+    }
+
+    #[test]
+    fn home_shows_local_whisper_when_no_cloud_service_is_ready() {
+        let cfg = config::Config::default();
+        let order = [Provider::Groq, Provider::OpenAi, Provider::Local];
+        let h = home_data(&cfg, &order, |p| p == Provider::Local);
+        assert!(h.stt.starts_with("whisper base") && h.stt.contains("Locale (Whisper)"));
+        assert_eq!(h.ai, "Nessuna: testo non corretto", "il locale non corregge il testo");
+        assert!(h.keys.contains("Locale (Whisper): modello scaricato") && h.keys.contains("Groq: nessuna chiave"));
+        let h = home_data(&cfg, &order, |_| false);
+        assert!(h.keys.contains("Locale (Whisper): modello non scaricato"));
+    }
+
+    #[test]
+    fn local_tile_is_about_the_model_not_a_key() {
+        let cfg = config::Config { local_model: "small".into(), ..config::Config::default() };
+        let t = tile_data(Provider::Local, &cfg, true, None, true, (true, "Pronto".into()), "Dall'avvio: 2 trascrizioni.");
+        assert!(t.is_local && t.has_key && !t.models_editable);
+        assert_eq!(t.local_index, 2);
+        assert!(t.info.contains("nessun dato esce") && t.info.contains("trascrizione grezza"));
+        assert!(t.key_note.is_empty());
+    }
+
+    #[test]
+    fn local_detail_says_what_to_do() {
+        let d = local_detail(localstt::Size::Base, false, 0);
+        assert!(d.contains("non ancora scaricato") && d.contains("142 MB") && d.contains("Scarica"));
+        let d = local_detail(localstt::Size::Small, true, 466_000_000);
+        assert!(d.contains("small scaricato e pronto") && d.contains("466 MB"));
     }
 
     #[test]

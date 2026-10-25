@@ -39,6 +39,8 @@ pub struct Config {
     pub openai_stt_model: String,
     pub openai_llm_model: String,
     pub anthropic_llm_model: String,
+    /// Modello Whisper per la trascrizione locale: tiny, base, small o medium (si scarica dalle Impostazioni)
+    pub local_model: String,
     pub max_seconds: u32,
     pub restore_clipboard: bool,
     /// Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)
@@ -95,10 +97,11 @@ impl Default for Config {
             llm_model: "openai/gpt-oss-120b".into(),
             fallback_models: vec!["openai/gpt-oss-20b".into(), "qwen/qwen3.8-27b".into()],
             stt_fallback_models: vec!["whisper-large-v3".into()],
-            providers: vec!["groq".into(), "openai".into(), "anthropic".into()],
+            providers: vec!["groq".into(), "openai".into(), "anthropic".into(), "local".into()],
             openai_stt_model: "gpt-4o-mini-transcribe".into(),
             openai_llm_model: "gpt-4.1-nano".into(),
             anthropic_llm_model: "claude-haiku-5-5".into(),
+            local_model: "base".into(),
             max_seconds: 120,
             restore_clipboard: true,
             debug: false,
@@ -220,6 +223,15 @@ pub fn dir() -> &'static Path {
 }
 
 pub fn load() -> Config {
+    static MIGRATE: std::sync::Once = std::sync::Once::new();
+    MIGRATE.call_once(|| {
+        let path = dir().join("config.toml");
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            if let Some(new) = migrate_local(&text) {
+                let _ = std::fs::write(&path, new);
+            }
+        }
+    });
     let c = load_raw();
     DEBUG.store(c.debug, Ordering::Relaxed);
     TEXT_FLAG.store(c.debug_log_text, Ordering::Relaxed);
@@ -273,9 +285,50 @@ fn env_value(name: &str) -> Option<String> {
     None
 }
 
-/// Chiave di un servizio AI (GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY).
+/// Una tantum: aggiunge la trascrizione locale in coda all'elenco `providers` di un config.toml creato prima
+/// che esistesse, e segna `local_migrated = true` cosi' una rimozione successiva resta com'e'.
+/// None se non c'e' nulla da fare.
+pub fn migrate_local(text: &str) -> Option<String> {
+    let is_key = |l: &&str, key: &str| !l.trim_start().starts_with('#') && l.split_once('=').map_or(false, |(k, _)| k.trim() == key);
+    if text.lines().any(|l| is_key(&l, "local_migrated")) {
+        return None;
+    }
+    if !text.lines().any(|l| is_key(&l, "providers")) {
+        return None; // senza la chiave vale l'elenco predefinito, che gia' include "local"
+    }
+    let mut list = toml::from_str::<Config>(text).ok()?.providers;
+    if !list.iter().any(|p| p.eq_ignore_ascii_case("local")) {
+        list.push("local".into());
+    }
+    let t = set_toml_list(text, "providers", &list);
+    Some(set_toml_bool(&t, "local_migrated", true))
+}
+
+/// Chiave di un servizio AI (GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY). Il locale non ne ha.
 pub fn provider_key(p: crate::providers::Provider) -> Option<String> {
+    if p.is_local() {
+        return None;
+    }
     env_value(p.key_env())
+}
+
+/// Dimensione del modello Whisper scelta per la trascrizione locale.
+pub fn local_size() -> crate::localstt::Size {
+    crate::localstt::Size::parse(&load_raw().local_model)
+}
+
+/// Il servizio puo' essere usato adesso: ha la chiave, oppure (locale) il modello e' scaricato.
+pub fn provider_ready(p: crate::providers::Provider) -> bool {
+    if p.is_local() {
+        crate::localstt::is_downloaded(dir(), local_size())
+    } else {
+        provider_key(p).is_some()
+    }
+}
+
+/// Imposta la dimensione del modello locale (`local_model = ...`).
+pub fn set_local_model(size: crate::localstt::Size) {
+    write_toml(|t| set_toml_string(t, "local_model", size.id()));
 }
 
 /// Salva la chiave di un servizio AI in .env.
@@ -805,7 +858,7 @@ mod tests {
     #[test]
     fn providers_default_and_models_parse() {
         let c = Config::default();
-        assert_eq!(c.providers, vec!["groq", "openai", "anthropic"]);
+        assert_eq!(c.providers, vec!["groq", "openai", "anthropic", "local"]);
         let c: Config = toml::from_str("openai_llm_model = \"gpt-x\"\nanthropic_llm_model = \"claude-y\"").unwrap();
         assert_eq!((c.openai_llm_model.as_str(), c.anthropic_llm_model.as_str()), ("gpt-x", "claude-y"));
         assert_eq!(c.openai_stt_model, "gpt-4o-mini-transcribe");
@@ -1051,5 +1104,38 @@ mod tests {
         assert!(added.find("sound_volume = 5").unwrap() < added.find("[[apps]]").unwrap());
         let parsed: Config = toml::from_str(&added).unwrap();
         assert_eq!(parsed.sound_volume, 5);
+    }
+
+    #[test]
+    fn local_is_the_last_default_provider_and_model_is_base() {
+        let d = Config::default();
+        assert_eq!(d.providers.last().map(String::as_str), Some("local"));
+        assert_eq!(d.local_model, "base");
+        assert_eq!(example().providers.last().map(String::as_str), Some("local"));
+        assert_eq!(example().local_model, "base");
+    }
+
+    #[test]
+    fn old_configs_get_local_appended_once() {
+        let old = "hotkey = \"x\"\nproviders = [\"groq\", \"openai\"]\n[[apps]]\nname = \"a\"\n";
+        let new = migrate_local(old).unwrap();
+        let c: Config = toml::from_str(&new).unwrap();
+        assert_eq!(c.providers, vec!["groq", "openai", "local"]);
+        assert!(new.contains("local_migrated = true"));
+        assert!(new.find("local_migrated").unwrap() < new.find("[[apps]]").unwrap());
+        // gia' migrato: se l'utente toglie "local" non lo si rimette
+        let removed = new.replace(", \"local\"", "");
+        assert_eq!(migrate_local(&removed), None);
+        // niente `providers`: vale il predefinito, che include gia' il locale
+        assert_eq!(migrate_local("hotkey = \"x\"\n"), None);
+        // gia' presente: si segna solo la migrazione
+        let has = migrate_local("providers = [\"local\", \"groq\"]\n").unwrap();
+        assert_eq!(toml::from_str::<Config>(&has).unwrap().providers, vec!["local", "groq"]);
+    }
+
+    #[test]
+    fn local_provider_has_no_key_and_is_ready_only_with_a_model() {
+        assert_eq!(provider_key(crate::providers::Provider::Local), None);
+        assert_eq!(crate::localstt::Size::parse(&Config::default().local_model), crate::localstt::Size::Base);
     }
 }

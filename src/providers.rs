@@ -14,9 +14,11 @@ pub enum Provider {
     Groq,
     OpenAi,
     Anthropic,
+    /// Whisper sul PC (solo trascrizione): ultima risorsa quando i servizi in rete non rispondono
+    Local,
 }
 
-pub const ALL: [Provider; 3] = [Provider::Groq, Provider::OpenAi, Provider::Anthropic];
+pub const ALL: [Provider; 4] = [Provider::Groq, Provider::OpenAi, Provider::Anthropic, Provider::Local];
 
 /// Pausa dopo un esaurimento crediti o una chiave rifiutata: si riprova dopo un'ora.
 const PAUSE_LONG: u64 = 3600;
@@ -27,6 +29,7 @@ impl Provider {
             Provider::Groq => "groq",
             Provider::OpenAi => "openai",
             Provider::Anthropic => "anthropic",
+            Provider::Local => "local",
         }
     }
 
@@ -35,6 +38,7 @@ impl Provider {
             Provider::Groq => "Groq",
             Provider::OpenAi => "OpenAI",
             Provider::Anthropic => "Anthropic",
+            Provider::Local => "Locale (Whisper)",
         }
     }
 
@@ -44,6 +48,7 @@ impl Provider {
             Provider::Groq => "GROQ_API_KEY",
             Provider::OpenAi => "OPENAI_API_KEY",
             Provider::Anthropic => "ANTHROPIC_API_KEY",
+            Provider::Local => "",
         }
     }
 
@@ -52,6 +57,7 @@ impl Provider {
             Provider::Groq => "https://api.groq.com/openai/v1",
             Provider::OpenAi => "https://api.openai.com/v1",
             Provider::Anthropic => "https://api.anthropic.com/v1",
+            Provider::Local => "",
         }
     }
 
@@ -61,6 +67,7 @@ impl Provider {
             Provider::Groq => "https://console.groq.com/settings/billing",
             Provider::OpenAi => "https://platform.openai.com/settings/organization/billing/overview",
             Provider::Anthropic => "https://console.anthropic.com/settings/billing",
+            Provider::Local => "",
         }
     }
 
@@ -70,12 +77,23 @@ impl Provider {
             Provider::Groq => "https://console.groq.com/keys",
             Provider::OpenAi => "https://platform.openai.com/api-keys",
             Provider::Anthropic => "https://console.anthropic.com/settings/keys",
+            Provider::Local => "",
         }
     }
 
     /// Anthropic non ha un servizio di trascrizione audio.
     pub fn supports_stt(self) -> bool {
         self != Provider::Anthropic
+    }
+
+    /// Whisper locale trascrive soltanto: non corregge il testo.
+    pub fn supports_llm(self) -> bool {
+        self != Provider::Local
+    }
+
+    /// Servizio che gira sul PC: niente chiave API, niente credito.
+    pub fn is_local(self) -> bool {
+        self == Provider::Local
     }
 
     pub fn parse(s: &str) -> Option<Provider> {
@@ -184,7 +202,7 @@ pub fn run_chain<T>(
 ) -> Result<(T, Provider), String> {
     let with_key: Vec<Provider> = order.iter().copied().filter(|p| usable(*p)).collect();
     if with_key.is_empty() {
-        return Err("nessun servizio AI con la chiave configurata (sezione API o Riserva AI)".into());
+        return Err("nessun servizio AI pronto (manca la chiave o il modello locale: sezione AI delle Impostazioni)".into());
     }
     let mut candidates: Vec<Provider> = with_key.iter().copied().filter(|p| state.paused(*p, now).is_none()).collect();
     if candidates.is_empty() {
@@ -301,16 +319,27 @@ pub fn move_item<T>(v: &mut Vec<T>, from: usize, to: usize) {
     }
 }
 
-/// Primo servizio in uso che ha la chiave (e, per la trascrizione, sa trascrivere): e' quello che risponde.
-pub fn first_active(order: &[Provider], has_key: impl Fn(Provider) -> bool, need_stt: bool) -> Option<Provider> {
-    order.iter().copied().find(|p| has_key(*p) && (!need_stt || p.supports_stt()))
+/// Primo servizio in uso che e' pronto (chiave o modello locale) e sa fare il lavoro richiesto
+/// (trascrivere o correggere il testo): e' quello che risponde.
+pub fn first_active(order: &[Provider], ready: impl Fn(Provider) -> bool, need_stt: bool) -> Option<Provider> {
+    order.iter().copied().find(|p| ready(*p) && if need_stt { p.supports_stt() } else { p.supports_llm() })
+}
+
+/// Servizi che possono trascrivere l'audio, nell'ordine di priorita'.
+pub fn stt_order(order: &[Provider]) -> Vec<Provider> {
+    order.iter().copied().filter(|p| p.supports_stt()).collect()
+}
+
+/// Servizi che possono correggere il testo, nell'ordine di priorita'.
+pub fn llm_order(order: &[Provider]) -> Vec<Provider> {
+    order.iter().copied().filter(|p| p.supports_llm()).collect()
 }
 
 impl State {
     /// Stato breve di un servizio per la sua tessera: (pronto, testo).
     pub fn status_at(&self, p: Provider, has_key: bool, now: u64) -> (bool, String) {
         match (has_key, self.paused(p, now)) {
-            (false, _) => (false, "Nessuna chiave".to_string()),
+            (false, _) => (false, if p.is_local() { "Modello non scaricato" } else { "Nessuna chiave" }.to_string()),
             (true, Some((left, why))) => (false, format!("In pausa: {} ({} min)", describe(why), left.div_ceil(60))),
             (true, None) => (true, "Pronto".to_string()),
         }
@@ -319,6 +348,9 @@ impl State {
     /// "dall'avvio: 3 chiamate, 450 token"
     pub fn usage_line(&self, p: Provider) -> String {
         let (calls, tokens) = self.counters(p);
+        if p.is_local() {
+            return format!("Dall'avvio: {calls} trascrizioni.");
+        }
         format!("Dall'avvio: {calls} chiamate, {tokens} token. Il credito residuo non e' leggibile via API.")
     }
 }
@@ -409,7 +441,7 @@ mod tests {
         let (_, used) = run_chain(&order, |p| p == Provider::Anthropic, &mut st, 0, |_| Ok(())).unwrap();
         assert_eq!(used, Provider::Anthropic);
         let r: Result<((), Provider), String> = run_chain(&order, |_| false, &mut st, 0, |_| Ok(()));
-        assert!(r.unwrap_err().contains("nessun servizio AI con la chiave"));
+        assert!(r.unwrap_err().contains("nessun servizio AI pronto"));
     }
 
     #[test]
@@ -447,14 +479,90 @@ mod tests {
     }
 
     #[test]
-    fn only_anthropic_cannot_transcribe() {
+    fn only_anthropic_cannot_transcribe_and_only_local_cannot_refine() {
         assert!(Provider::Groq.supports_stt() && Provider::OpenAi.supports_stt() && !Provider::Anthropic.supports_stt());
+        assert!(Provider::Local.supports_stt() && !Provider::Local.supports_llm());
+        assert!(Provider::Groq.supports_llm() && Provider::Anthropic.supports_llm());
+    }
+
+    #[test]
+    fn stt_and_llm_orders_keep_priority_and_drop_unsuitable_services() {
+        let order = [Provider::Anthropic, Provider::Groq, Provider::Local];
+        assert_eq!(stt_order(&order), vec![Provider::Groq, Provider::Local]);
+        assert_eq!(llm_order(&order), vec![Provider::Anthropic, Provider::Groq]);
+    }
+
+    #[test]
+    fn local_is_parsed_and_listed() {
+        let v = |a: &[&str]| parse_order(&a.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(v(&["groq", "local"]), vec![Provider::Groq, Provider::Local]);
+        assert_eq!(Provider::parse("LOCAL"), Some(Provider::Local));
+        assert_eq!(tile_order(&[Provider::Groq]).last(), Some(&Provider::Local));
+    }
+
+    #[test]
+    fn local_is_used_only_when_every_cloud_service_fails_or_is_paused() {
+        let order = [Provider::Groq, Provider::OpenAi, Provider::Local];
+        // tutto bene in rete: il locale non viene mai chiamato
+        let mut st = State::default();
+        let mut calls = Vec::new();
+        let (_, used) = run_chain(&order, |_| true, &mut st, 0, |p| {
+            calls.push(p);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!((used, calls.clone()), (Provider::Groq, vec![Provider::Groq]));
+        // Groq e OpenAI senza crediti: si arriva al locale, nello stesso tentativo
+        let mut st = State::default();
+        let mut calls = Vec::new();
+        let (_, used) = run_chain(&order, |_| true, &mut st, 1000, |p| {
+            calls.push(p);
+            if p == Provider::Local {
+                Ok(())
+            } else {
+                Err(err(429, "insufficient_quota"))
+            }
+        })
+        .unwrap();
+        assert_eq!(used, Provider::Local);
+        assert_eq!(calls, vec![Provider::Groq, Provider::OpenAi, Provider::Local]);
+        // dopo, i servizi in pausa vengono saltati e si va dritti al locale
+        calls.clear();
+        let _ = run_chain(&order, |_| true, &mut st, 1100, |p| {
+            calls.push(p);
+            Ok(())
+        });
+        assert_eq!(calls, vec![Provider::Local]);
+        // senza modello scaricato il locale non e' utilizzabile e non viene provato
+        calls.clear();
+        let r = run_chain(&order, |p| p != Provider::Local, &mut State::default(), 0, |p| {
+            calls.push(p);
+            Err::<(), _>(err(503, "giu'"))
+        });
+        assert!(r.is_err());
+        assert!(!calls.contains(&Provider::Local));
+    }
+
+    #[test]
+    fn first_active_skips_local_for_text_correction() {
+        let order = [Provider::Local, Provider::Groq];
+        assert_eq!(first_active(&order, |_| true, true), Some(Provider::Local));
+        assert_eq!(first_active(&order, |_| true, false), Some(Provider::Groq));
+        assert_eq!(first_active(&order, |p| p == Provider::Local, false), None);
+    }
+
+    #[test]
+    fn local_status_asks_for_the_model() {
+        let st = State::default();
+        assert_eq!(st.status_at(Provider::Local, false, 0).1, "Modello non scaricato");
+        assert_eq!(st.status_at(Provider::Local, true, 0), (true, "Pronto".to_string()));
+        assert_eq!(st.usage_line(Provider::Local), "Dall'avvio: 0 trascrizioni.");
     }
 
     #[test]
     fn tile_order_puts_enabled_first_then_the_rest() {
-        assert_eq!(tile_order(&[Provider::OpenAi, Provider::Groq]), vec![Provider::OpenAi, Provider::Groq, Provider::Anthropic]);
-        assert_eq!(tile_order(&[Provider::Groq]), vec![Provider::Groq, Provider::OpenAi, Provider::Anthropic]);
+        assert_eq!(tile_order(&[Provider::OpenAi, Provider::Groq]), vec![Provider::OpenAi, Provider::Groq, Provider::Anthropic, Provider::Local]);
+        assert_eq!(tile_order(&[Provider::Groq]), vec![Provider::Groq, Provider::OpenAi, Provider::Anthropic, Provider::Local]);
     }
 
     #[test]

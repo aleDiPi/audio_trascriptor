@@ -11,6 +11,9 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      # whisper.cpp (trascrizione locale) genera i binding con libclang, gia' installato sul runner
+      LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

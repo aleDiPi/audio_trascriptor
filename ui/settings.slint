@@ -1,5 +1,5 @@
 // Finestra Impostazioni: barra laterale a sinistra, Home all'apertura. Stile Fluent, DPI nativo.
-import { Button, CheckBox, ComboBox, LineEdit, ScrollView, Slider, TextEdit, Palette } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, ProgressIndicator, ScrollView, Slider, TextEdit, Palette } from "std-widgets.slint";
 
 component NavItem inherits Rectangle {
     in property <string> label;
@@ -125,19 +125,49 @@ export struct Tile {
     result: string,
     busy: bool,
     clear-seq: int,
+    is-local: bool,
+    local-index: int,
+    downloading: bool,
+    progress: float,
+    local-detail: string,
+}
+
+component TileKeyRow inherits HorizontalLayout {
+    in property <bool> has-key;
+    in property <string> key-note;
+    in property <bool> busy;
+    in property <int> clear-seq;
+    callback save(string);
+    callback remove();
+    callback link();
+    spacing: 8px;
+    field := LineEdit {
+        input-type: password;
+        placeholder-text: root.has-key ? root.key-note : "Incolla la chiave API";
+        horizontal-stretch: 1;
+    }
+    changed clear-seq => { field.text = ""; }
+    Button { text: "Verifica e salva"; primary: true; enabled: !root.busy; clicked => { root.save(field.text); } }
+    Button { text: "Rimuovi"; enabled: root.has-key && !root.busy; clicked => { root.remove(); } }
+    Button { text: "Crea chiave"; clicked => { root.link(); } }
 }
 
 component TileView inherits Rectangle {
     in property <Tile> t;
     in property <int> pos;
     in property <bool> dragging;
+    in property <[string]> local-labels;
+    callback set-local-size(int);
+    callback download-local();
+    callback cancel-download();
+    callback delete-local();
     callback save-key(string);
     callback remove-key();
     callback open-keys();
     callback open-billing();
     callback save-models(string, string);
     callback toggle-use(bool);
-    height: 232px;
+    height: 250px;
     background: Palette.control-background;
     border-radius: 10px;
     border-width: dragging ? 2px : 1px;
@@ -145,9 +175,6 @@ component TileView inherits Rectangle {
     drop-shadow-blur: dragging ? 18px : 0px;
     drop-shadow-color: #00000055;
     opacity: t.enabled ? 1.0 : 0.72;
-
-    property <int> seq: t.clear-seq;
-    changed seq => { key-field.text = ""; }
 
     VerticalLayout {
         padding: 14px;
@@ -183,17 +210,33 @@ component TileView inherits Rectangle {
             Rectangle { horizontal-stretch: 1; }
             CheckBox { text: "Usa"; checked: t.enabled; toggled => { root.toggle-use(self.checked); } }
         }
-        HorizontalLayout {
-            spacing: 8px;
-            key-field := LineEdit {
-                input-type: password;
-                placeholder-text: t.has-key ? t.key-note : "Incolla la chiave API";
-                horizontal-stretch: 1;
-            }
-            Button { text: "Verifica e salva"; primary: true; enabled: !t.busy; clicked => { root.save-key(key-field.text); } }
-            Button { text: "Rimuovi"; enabled: t.has-key && !t.busy; clicked => { root.remove-key(); } }
-            Button { text: "Crea chiave"; clicked => { root.open-keys(); } }
+        if !t.is-local: TileKeyRow {
+            has-key: t.has-key;
+            key-note: t.key-note;
+            busy: t.busy;
+            clear-seq: t.clear-seq;
+            save(k) => { root.save-key(k); }
+            remove => { root.remove-key(); }
+            link => { root.open-keys(); }
         }
+        if t.is-local: HorizontalLayout {
+            spacing: 8px;
+            ComboBox {
+                model: root.local-labels;
+                current-index: t.local-index;
+                enabled: !t.downloading;
+                horizontal-stretch: 1;
+                selected(_) => { root.set-local-size(self.current-index); }
+            }
+            Button { text: "Scarica"; primary: true; enabled: !t.has-key && !t.downloading; clicked => { root.download-local(); } }
+            if t.downloading: Button { text: "Annulla"; clicked => { root.cancel-download(); } }
+            if !t.downloading: Button { text: "Elimina"; enabled: t.has-key; clicked => { root.delete-local(); } }
+        }
+        if t.is-local && t.downloading: ProgressIndicator {
+            progress: max(t.progress, 0.0);
+            indeterminate: t.progress < 0;
+        }
+        if t.is-local: Text { text: t.local-detail; font-size: 12px; color: Palette.foreground; wrap: word-wrap; }
         if t.models-editable: HorizontalLayout {
             spacing: 8px;
             VerticalLayout {
@@ -211,7 +254,7 @@ component TileView inherits Rectangle {
             }
             VerticalLayout { alignment: end; Button { text: "Salva modelli"; clicked => { root.save-models(stt-edit.text, llm-edit.text); } } }
         }
-        if !t.models-editable: HorizontalLayout {
+        if !t.models-editable && !t.is-local: HorizontalLayout {
             spacing: 24px;
             VerticalLayout {
                 spacing: 2px;
@@ -227,7 +270,7 @@ component TileView inherits Rectangle {
         HorizontalLayout {
             spacing: 8px;
             Text { text: t.info; font-size: 12px; color: Palette.foreground.with-alpha(0.75); wrap: word-wrap; horizontal-stretch: 1; vertical-alignment: center; }
-            Button { text: "Credito e piano"; clicked => { root.open-billing(); } }
+            if !t.is-local: Button { text: "Credito e piano"; clicked => { root.open-billing(); } }
         }
         Text { text: t.result; font-size: 12px; color: Palette.foreground; wrap: word-wrap; }
     }
@@ -270,9 +313,10 @@ export component SettingsWindow inherits Window {
     in-out property <[Tile]> tiles;
     in property <string> usage-text;
     in property <string> order-note;
+    in property <[string]> local-size-labels;
     property <int> drag-idx: -1;
     property <length> drag-dy: 0px;
-    property <length> slot: 244px;
+    property <length> slot: 262px;
     property <int> drag-target: max(0, min(tiles.length - 1, Math.round((drag-idx * slot + drag-dy) / slot)));
     // --- GitHub
     in property <string> token-status;
@@ -302,6 +346,10 @@ export component SettingsWindow inherits Window {
     callback open-billing(string);
     callback save-models(string, string, string);
     callback toggle-use(string, bool);
+    callback set-local-size(int);
+    callback download-local();
+    callback cancel-download();
+    callback delete-local();
     callback reorder(int, int);
     callback save-token(string);
     callback clear-token();
@@ -401,6 +449,11 @@ export component SettingsWindow inherits Window {
                             width: parent.width;
                             t: tile;
                             pos: i;
+                            local-labels: root.local-size-labels;
+                            set-local-size(n) => { root.set-local-size(n); }
+                            download-local => { root.download-local(); }
+                            cancel-download => { root.cancel-download(); }
+                            delete-local => { root.delete-local(); }
                             dragging: root.drag-idx == i;
                             y: root.drag-idx == i ? max(0px, min((root.tiles.length - 1) * root.slot, i * root.slot + root.drag-dy))
                                 : root.drag-idx < 0 ? i * root.slot
@@ -419,7 +472,7 @@ export component SettingsWindow inherits Window {
                             x: 0px;
                             y: i * root.slot;
                             width: 40px;
-                            height: 232px;
+                            height: 250px;
                             mouse-cursor: root.drag-idx == i ? MouseCursor.grabbing : MouseCursor.grab;
                             pointer-event(e) => {
                                 if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
