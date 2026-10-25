@@ -55,3 +55,7 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 ## Crediti
 
 Il prompt di pulizia del testo deriva da [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT, © OpenWhispr Team).
+
+## Test
+
+`cargo test` verifica il parsing della configurazione, la scelta della regola per app (inclusi `send_enter` e `raw`) e il parsing della scorciatoia. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.

@@ -10,7 +10,11 @@ fn main() {
 
 #[cfg(windows)]
 mod audio;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
+mod combo;
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
 mod config;
 #[cfg(windows)]
 mod groq;

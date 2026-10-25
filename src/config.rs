@@ -154,3 +154,74 @@ pub fn log(msg: &str) {
         let _ = writeln!(f, "[{secs}] {msg}");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn example() -> Config {
+        toml::from_str(DEFAULT_CONFIG).expect("config.example.toml deve essere valido")
+    }
+
+    #[test]
+    fn example_config_is_valid() {
+        let c = example();
+        assert_eq!(c.hotkey, "ctrl+win");
+        assert!(!c.is_toggle());
+        assert!(c.default_prompt.contains("pulizia"));
+        assert!(!c.apps.is_empty());
+    }
+
+    #[test]
+    fn example_hotkey_parses() {
+        assert!(crate::combo::parse(&example().hotkey).is_ok());
+    }
+
+    #[test]
+    fn rule_matches_exe_case_insensitive() {
+        let c = example();
+        let r = c.rule_for("OUTLOOK.EXE", "Posta in arrivo").expect("regola outlook");
+        assert!(r.prompt.contains("posta"));
+        assert!(c.rule_for("sconosciuto.exe", "").is_none());
+    }
+
+    #[test]
+    fn claude_desktop_sends_enter_and_terminals_are_raw() {
+        let c = example();
+        assert!(c.rule_for("claude.exe", "").unwrap().send_enter);
+        assert!(c.rule_for("windowsterminal.exe", "").unwrap().raw);
+    }
+
+    #[test]
+    fn title_contains_and_first_rule_wins() {
+        let c: Config = toml::from_str(
+            r#"
+            [[apps]]
+            exe = ["chrome.exe"]
+            title_contains = "Gmail"
+            prompt = "mail"
+            [[apps]]
+            exe = ["chrome.exe"]
+            prompt = "generico"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(c.rule_for("chrome.exe", "Posta - GMAIL").unwrap().prompt, "mail");
+        assert_eq!(c.rule_for("chrome.exe", "Wikipedia").unwrap().prompt, "generico");
+    }
+
+    #[test]
+    fn missing_fields_use_defaults() {
+        let c: Config = toml::from_str("hotkey = \"f9\"").unwrap();
+        assert_eq!(c.hotkey, "f9");
+        assert_eq!(c.language, "it");
+        assert_eq!(c.max_seconds, 120);
+        assert!(c.restore_clipboard);
+    }
+
+    #[test]
+    fn toggle_mode() {
+        let c: Config = toml::from_str("mode = \"Toggle\"").unwrap();
+        assert!(c.is_toggle());
+    }
+}
