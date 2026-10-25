@@ -286,10 +286,13 @@ mod app {
             text
         } else {
             let prompt = cfg.system_prompt(rule);
+            config::debug_text_long("prompt di sistema inviato all'AI", &prompt);
+            config::debug_text("messaggio utente inviato all'AI", &format!("<trascrizione>{text}</trascrizione>"));
+            config::debug(|| format!("modelli AI in ordine: {:?}, temperatura 0.2", cfg.llm_models()));
             match usage::with_fallback(&cfg.llm_models(), |model| groq.refine(model, &prompt, &text)) {
                 Ok((refined, llm_model)) => {
                     config::debug(|| format!("testo rifinito con {llm_model}: {} caratteri", refined.chars().count()));
-                    config::debug_text("rifinito", &refined);
+                    config::debug_text("risposta dell'AI (testo rifinito)", &refined);
                     refined
                 }
                 Err(e) => {

@@ -369,10 +369,46 @@ pub fn debug(msg: impl FnOnce() -> String) {
 
 /// Come `debug`, ma per il testo dettato: richiede anche `debug_log_text = true` (max 500 caratteri).
 pub fn debug_text(label: &str, text: &str) {
+    debug_text_max(label, text, 500);
+}
+
+/// Come `debug_text` ma con un limite piu' alto: per il prompt completo inviato all'AI (circa 2-3 KB).
+pub fn debug_text_long(label: &str, text: &str) {
+    debug_text_max(label, text, 6000);
+}
+
+fn debug_text_max(label: &str, text: &str, max: usize) {
     if DEBUG_TEXT.load(Ordering::Relaxed) {
-        let t: String = text.chars().take(500).collect();
-        write_log("txt", &format!("{label}: {t}"));
+        write_log("txt", &format!("{label}: {}", clip_text(text, max)));
     }
+}
+
+/// Tronca a `max` caratteri e rientra le righe successive alla prima, cosi' ogni voce del log resta leggibile.
+pub fn clip_text(text: &str, max: usize) -> String {
+    let mut t: String = text.chars().take(max).collect();
+    if text.chars().count() > max {
+        t.push_str(" [...troncato]");
+    }
+    t.replace("\r\n", "\n").replace('\n', "\n    ")
+}
+
+/// Corpo JSON della richiesta di rifinitura inviata a Groq (chat/completions).
+pub fn refine_request(model: &str, system: &str, text: &str) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": format!("<trascrizione>{text}</trascrizione>")}
+        ]
+    });
+    // risposta rapida: serve solo pulizia del testo, non ragionamento
+    if model.contains("gpt-oss") {
+        body["reasoning_effort"] = "low".into();
+    } else if model.contains("qwen") {
+        body["reasoning_effort"] = "none".into();
+    }
+    body
 }
 
 /// Errori e avvisi: sempre nel log. Mai chiavi, token o testo dettato.
@@ -664,5 +700,28 @@ mod tests {
         ] {
             assert!(iss.contains(needle), "manca '{needle}' nella verifica del token");
         }
+    }
+
+    #[test]
+    fn refine_request_has_system_and_wrapped_user_message() {
+        let c = example();
+        let rule = c.rule_for("claude.exe", "");
+        let system = c.system_prompt(rule);
+        let b = refine_request("openai/gpt-oss-120b", &system, "ciao mondo");
+        assert_eq!(b["messages"][0]["role"], "system");
+        assert_eq!(b["messages"][0]["content"], system.as_str());
+        assert_eq!(b["messages"][1]["content"], "<trascrizione>ciao mondo</trascrizione>");
+        assert_eq!(b["reasoning_effort"], "low");
+        assert_eq!(refine_request("qwen/qwen3.8-27b", "s", "t")["reasoning_effort"], "none");
+        assert!(refine_request("altro", "s", "t").get("reasoning_effort").is_none());
+        // il prompt per claude.exe contiene prompt di base, contesto dell'app e regole fisse
+        assert!(system.contains("correttore") && system.contains("messaggio per un assistente AI") && system.contains("Regole fisse"));
+    }
+
+    #[test]
+    fn clip_text_truncates_and_indents() {
+        assert_eq!(clip_text("a\nb", 10), "a\n    b");
+        assert_eq!(clip_text("abcdef", 3), "abc [...troncato]");
+        assert_eq!(clip_text("x\r\ny", 10), "x\n    y");
     }
 }
