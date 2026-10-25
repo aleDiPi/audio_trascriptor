@@ -115,7 +115,7 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 
 ## Icona del programma
 
-`assets/icon.ico` (16-256 px: microfono bianco con onde sonore su fondo blu) e' incorporata nell'exe tramite `build.rs` e `assets/app.rc`: la usano Esplora risorse, il menu Start, l'installer, la voce di disinstallazione e la finestra Impostazioni. L'icona nella tray ha lo stesso microfono con il fondo che cambia con lo stato (blu pronto, rosso registra, ambra elabora, grigio errore). Per rigenerarla: `python assets/make_icon.py` (serve Pillow).
+`assets/icon.ico` (16-256 px: microfono bianco con barre di voce su fondo a gradiente indaco-viola-rosa) e' incorporata nell'exe tramite `build.rs` e `assets/app.rc`: la usano Esplora risorse, il menu Start, l'installer, la voce di disinstallazione e la finestra Impostazioni. L'icona nella tray ha lo stesso microfono con il fondo che cambia con lo stato (blu pronto, rosso registra, ambra elabora, grigio errore). Per rigenerarla: `python assets/make_icon.py` (serve Pillow).
 
 ## Icona con alone
 
