@@ -31,6 +31,7 @@ const ID_PROMPT_SEL: i32 = 119;
 const ID_CHECK_NOW: i32 = 120;
 const ID_UPDATE_NOW: i32 = 121;
 const ID_UPD_RESULT: i32 = 122;
+const ID_OVERLAY: i32 = 123;
 const ID_TAB0: i32 = 200; // 200..=204: pulsanti delle sezioni
 const TABS: [&str; 5] = ["API", "GitHub", "Impostazioni", "Prompt", "Info"];
 
@@ -241,7 +242,9 @@ unsafe fn build(hwnd: HWND) {
     child(hwnd, p, "BUTTON", "Verifica aggiornamenti", BS_PUSHBUTTON as u32 | WS_TABSTOP, (16, 86, 170, 28), ID_CHECK_NOW);
     child(hwnd, p, "BUTTON", "Aggiorna ora", BS_PUSHBUTTON as u32 | WS_TABSTOP, (196, 86, 150, 28), ID_UPDATE_NOW);
     info(hwnd, p, "Verifica: controlla se esiste una versione piu' recente. Aggiorna ora: la scarica e la installa subito (anche con gli aggiornamenti automatici spenti).", (16, 120, 608, 50), ID_UPD_RESULT);
-    let dbg = child(hwnd, p, "BUTTON", "Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 184, 600, 22), ID_DEBUG);
+    let ovl = child(hwnd, p, "BUTTON", "Mostra l'icona con l'alone sonoro in basso a destra mentre detti", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 182, 600, 22), ID_OVERLAY);
+    SendMessageW(ovl, BM_SETCHECK, config::overlay_enabled() as usize, 0);
+    let dbg = child(hwnd, p, "BUTTON", "Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 212, 600, 22), ID_DEBUG);
     SendMessageW(dbg, BM_SETCHECK, config::debug_enabled() as usize, 0);
     let dtx = child(
         hwnd,
@@ -249,18 +252,18 @@ unsafe fn build(hwnd: HWND) {
         "BUTTON",
         "Nel log anche il testo dettato, il prompt e la risposta dell'AI (privato: solo per cercare un problema)",
         BS_AUTOCHECKBOX as u32 | WS_TABSTOP,
-        (36, 210, 580, 22),
+        (36, 238, 580, 22),
         ID_DEBUG_TEXT,
     );
     SendMessageW(dtx, BM_SETCHECK, cfg.debug_log_text as usize, 0);
-    child(hwnd, p, "BUTTON", "Apri log", BS_PUSHBUTTON as u32 | WS_TABSTOP, (16, 246, 128, 28), ID_OPENLOG);
-    child(hwnd, p, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (156, 246, 150, 28), ID_FOLDER);
-    info(hwnd, p, &format!("Log: {}", config::log_path().display()), (16, 284, 608, 34), 0);
+    child(hwnd, p, "BUTTON", "Apri log", BS_PUSHBUTTON as u32 | WS_TABSTOP, (16, 274, 128, 28), ID_OPENLOG);
+    child(hwnd, p, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (156, 274, 150, 28), ID_FOLDER);
+    info(hwnd, p, &format!("Log: {}", config::log_path().display()), (16, 310, 608, 34), 0);
     info(
         hwnd,
         p,
         "Spegnendo la modalita' debug i file di log vengono cancellati. Scorciatoia, lingua, modelli e prompt si cambiano in config.toml (\"Apri cartella config\"), poi \"Ricarica configurazione\" dal menu dell'icona.",
-        (16, 326, 608, 70),
+        (16, 348, 608, 70),
         0,
     );
 
@@ -519,6 +522,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 ID_TOKEN_SAVE => on_token_save(hwnd),
                 ID_OPENLOG => config::open_log(),
                 ID_GROQ_LINK => open_url(GROQ_KEYS_URL),
+                ID_OVERLAY => {
+                    let on = SendMessageW(GetDlgItem(hwnd, ID_OVERLAY), BM_GETCHECK, 0, 0) == 1;
+                    config::set_overlay(on);
+                }
                 ID_AUTOUPD => {
                     let on = SendMessageW(GetDlgItem(hwnd, ID_AUTOUPD), BM_GETCHECK, 0, 0) == 1;
                     config::set_auto_update(on);
@@ -558,6 +565,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 // tiene allineata la casella con il menu della tray
                 SendMessageW(GetDlgItem(hwnd, ID_DEBUG), BM_SETCHECK, config::debug_enabled() as usize, 0);
                 SendMessageW(GetDlgItem(hwnd, ID_AUTOUPD), BM_SETCHECK, config::auto_update_enabled() as usize, 0);
+                SendMessageW(GetDlgItem(hwnd, ID_OVERLAY), BM_SETCHECK, config::overlay_enabled() as usize, 0);
                 let h = GetDlgItem(hwnd, ID_USAGE);
                 let t = usage_text();
                 if get_text(h) != t {

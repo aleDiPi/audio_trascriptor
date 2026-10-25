@@ -51,12 +51,19 @@ where
             config.clone(),
             move |data: &[T], _| {
                 let mut b = buf.lock().unwrap();
+                let (mut energy, mut n) = (0f32, 0usize);
                 for frame in data.chunks(channels) {
                     if b.len() >= max {
                         break;
                     }
                     let sum: f32 = frame.iter().map(|s| f32::from_sample(*s)).sum();
-                    b.push(sum / frame.len() as f32);
+                    let v = sum / frame.len() as f32;
+                    energy += v * v;
+                    n += 1;
+                    b.push(v);
+                }
+                if n > 0 {
+                    crate::levels::report((energy / n as f32).sqrt()); // volume per l'alone dell'icona
                 }
             },
             |e| crate::config::log(&format!("errore stream audio: {e}")),

@@ -60,6 +60,52 @@ pub fn foreground_app() -> (String, String) {
     }
 }
 
+/// Copia (da distruggere con DestroyIcon) dell'icona dell'app in primo piano: quella della finestra,
+/// altrimenti quella dell'eseguibile. None se non se ne trova nessuna.
+pub fn foreground_icon() -> Option<isize> {
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return None;
+        }
+        for kind in [ICON_BIG as usize, ICON_SMALL2 as usize] {
+            let mut r: usize = 0;
+            let ok = SendMessageTimeoutW(hwnd, WM_GETICON, kind, 0, SMTO_ABORTIFHUNG | SMTO_BLOCK, 80, &mut r);
+            if ok != 0 && r != 0 {
+                let c = CopyIcon(r as HICON);
+                if !c.is_null() {
+                    return Some(c as isize);
+                }
+            }
+        }
+        let class_icon = GetClassLongPtrW(hwnd, GCLP_HICON);
+        if class_icon != 0 {
+            let c = CopyIcon(class_icon as HICON);
+            if !c.is_null() {
+                return Some(c as isize);
+            }
+        }
+        // icona dell'eseguibile
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if h.is_null() {
+            return None;
+        }
+        let mut p = [0u16; 1024];
+        let mut len = p.len() as u32;
+        let ok = QueryFullProcessImageNameW(h, 0, p.as_mut_ptr(), &mut len) != 0;
+        CloseHandle(h);
+        if !ok {
+            return None;
+        }
+        p[len as usize] = 0;
+        let mut large: HICON = null_mut();
+        let n = windows_sys::Win32::UI::Shell::ExtractIconExW(p.as_ptr(), 0, &mut large, null_mut(), 1);
+        (n > 0 && !large.is_null()).then_some(large as isize)
+    }
+}
+
 fn open_clipboard() -> bool {
     for _ in 0..10 {
         if unsafe { OpenClipboard(null_mut()) } != 0 {
