@@ -244,11 +244,8 @@ pub fn record_use(p: Provider, tokens: u64) {
     STATE.lock().unwrap().record(p, tokens);
 }
 
-/// Testo per le Impostazioni: un blocco per servizio, nell'ordine di priorita'.
-pub fn report(order: &[Provider], key: impl Fn(Provider) -> Option<String>) -> String {
-    report_at(&STATE.lock().unwrap(), now(), order, key)
-}
-
+/// Testo riassuntivo: un blocco per servizio, nell'ordine di priorita'.
+#[cfg(test)]
 pub fn report_at(state: &State, now: u64, order: &[Provider], key: impl Fn(Provider) -> Option<String>) -> String {
     let mut s = String::from(
         "Ordine di priorita': se un servizio finisce i crediti o rifiuta la chiave passo in automatico al successivo e lo riprovo dopo un'ora.\n",
@@ -286,6 +283,52 @@ pub fn report_at(state: &State, now: u64, order: &[Provider], key: impl Fn(Provi
         }
     }
     s
+}
+
+/// Tutti e tre i servizi per le tessere delle Impostazioni: prima quelli in uso (nell'ordine di
+/// priorita'), poi gli altri.
+pub fn tile_order(enabled: &[Provider]) -> Vec<Provider> {
+    let mut v = enabled.to_vec();
+    v.extend(ALL.into_iter().filter(|p| !enabled.contains(p)));
+    v
+}
+
+/// Sposta l'elemento `from` nella posizione `to` (trascinamento di una tessera).
+pub fn move_item<T>(v: &mut Vec<T>, from: usize, to: usize) {
+    if from < v.len() && to < v.len() && from != to {
+        let x = v.remove(from);
+        v.insert(to, x);
+    }
+}
+
+/// Primo servizio in uso che ha la chiave (e, per la trascrizione, sa trascrivere): e' quello che risponde.
+pub fn first_active(order: &[Provider], has_key: impl Fn(Provider) -> bool, need_stt: bool) -> Option<Provider> {
+    order.iter().copied().find(|p| has_key(*p) && (!need_stt || p.supports_stt()))
+}
+
+impl State {
+    /// Stato breve di un servizio per la sua tessera: (pronto, testo).
+    pub fn status_at(&self, p: Provider, has_key: bool, now: u64) -> (bool, String) {
+        match (has_key, self.paused(p, now)) {
+            (false, _) => (false, "Nessuna chiave".to_string()),
+            (true, Some((left, why))) => (false, format!("In pausa: {} ({} min)", describe(why), left.div_ceil(60))),
+            (true, None) => (true, "Pronto".to_string()),
+        }
+    }
+
+    /// "dall'avvio: 3 chiamate, 450 token"
+    pub fn usage_line(&self, p: Provider) -> String {
+        let (calls, tokens) = self.counters(p);
+        format!("Dall'avvio: {calls} chiamate, {tokens} token. Il credito residuo non e' leggibile via API.")
+    }
+}
+
+pub fn status(p: Provider, has_key: bool) -> (bool, String) {
+    STATE.lock().unwrap().status_at(p, has_key, now())
+}
+
+pub fn usage_line(p: Provider) -> String {
+    STATE.lock().unwrap().usage_line(p)
 }
 
 #[cfg(test)]
@@ -406,5 +449,43 @@ mod tests {
     #[test]
     fn only_anthropic_cannot_transcribe() {
         assert!(Provider::Groq.supports_stt() && Provider::OpenAi.supports_stt() && !Provider::Anthropic.supports_stt());
+    }
+
+    #[test]
+    fn tile_order_puts_enabled_first_then_the_rest() {
+        assert_eq!(tile_order(&[Provider::OpenAi, Provider::Groq]), vec![Provider::OpenAi, Provider::Groq, Provider::Anthropic]);
+        assert_eq!(tile_order(&[Provider::Groq]), vec![Provider::Groq, Provider::OpenAi, Provider::Anthropic]);
+    }
+
+    #[test]
+    fn move_item_reorders_and_ignores_bad_indexes() {
+        let mut v = vec!['a', 'b', 'c'];
+        move_item(&mut v, 0, 2);
+        assert_eq!(v, vec!['b', 'c', 'a']);
+        move_item(&mut v, 2, 0);
+        assert_eq!(v, vec!['a', 'b', 'c']);
+        move_item(&mut v, 1, 9);
+        move_item(&mut v, 7, 0);
+        assert_eq!(v, vec!['a', 'b', 'c']);
+    }
+
+    #[test]
+    fn first_active_skips_missing_keys_and_non_stt() {
+        let order = [Provider::Anthropic, Provider::OpenAi, Provider::Groq];
+        let keys = |p: Provider| p != Provider::OpenAi;
+        assert_eq!(first_active(&order, keys, false), Some(Provider::Anthropic));
+        assert_eq!(first_active(&order, keys, true), Some(Provider::Groq));
+        assert_eq!(first_active(&order, |_| false, false), None);
+    }
+
+    #[test]
+    fn tile_status_and_usage_line() {
+        let mut st = State::default();
+        assert_eq!(st.status_at(Provider::Groq, false, 0), (false, "Nessuna chiave".to_string()));
+        assert_eq!(st.status_at(Provider::Groq, true, 0), (true, "Pronto".to_string()));
+        st.pause(Provider::Groq, 5000, Failure::OutOfCredit);
+        assert_eq!(st.status_at(Provider::Groq, true, 4000), (false, "In pausa: crediti esauriti (17 min)".to_string()));
+        st.record(Provider::Groq, 40);
+        assert!(st.usage_line(Provider::Groq).starts_with("Dall'avvio: 1 chiamate, 40 token"));
     }
 }

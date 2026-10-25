@@ -257,11 +257,6 @@ fn env_value(name: &str) -> Option<String> {
     None
 }
 
-/// Chiave Groq (GROQ_API_KEY).
-pub fn groq_key() -> Option<String> {
-    env_value("GROQ_API_KEY")
-}
-
 /// Chiave di un servizio AI (GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY).
 pub fn provider_key(p: crate::providers::Provider) -> Option<String> {
     env_value(p.key_env())
@@ -306,11 +301,6 @@ fn save_env_value(name: &str, value: &str) -> std::io::Result<()> {
     let path = dir().join(".env");
     let old = std::fs::read_to_string(&path).unwrap_or_default();
     std::fs::write(path, set_env_value(&old, name, value))
-}
-
-/// Salva la chiave Groq in .env.
-pub fn save_groq_key(key: &str) -> std::io::Result<()> {
-    save_env_value("GROQ_API_KEY", key)
 }
 
 /// Salva il token degli aggiornamenti in .env.

@@ -34,6 +34,9 @@ fn w(s: &str) -> Vec<u16> {
 /// Avvia il thread della finestra (resta in attesa di messaggi: nessun consumo da ferma).
 pub fn start() {
     std::thread::spawn(|| unsafe {
+        // L'app e' "per monitor DPI" (testo nitido nelle impostazioni); questa finestra ha misure fisse in pixel
+        // e resta quindi non consapevole del DPI: Windows la scala come prima.
+        windows_sys::Win32::UI::HiDpi::SetThreadDpiAwarenessContext(windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_UNAWARE);
         let class = w("TrascrittoreOverlay");
         let hinst = GetModuleHandleW(null());
         let wc = WNDCLASSW {
