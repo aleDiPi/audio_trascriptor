@@ -14,7 +14,12 @@ mode = "hold"
 language = "it"
 
 stt_model = "whisper-large-v3-turbo"
-llm_model = "llama-3.3-70b-versatile"
+# Modelli Groq usati da OpenWhispr: gpt-oss-120b (predefinito), qwen/qwen3.8-27b, gpt-oss-20b
+llm_model = "openai/gpt-oss-120b"
+
+# Modelli di riserva: se Groq risponde "limite raggiunto" (piano gratuito) si passa al successivo, in ordine
+fallback_models = ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+stt_fallback_models = ["whisper-large-v3"]
 
 # Durata massima di una registrazione, in secondi
 max_seconds = 120

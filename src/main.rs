@@ -19,9 +19,14 @@ mod config;
 #[cfg(windows)]
 mod groq;
 #[cfg(windows)]
+mod gui;
+#[cfg(windows)]
 mod hotkey;
 #[cfg(windows)]
 mod platform;
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
+mod usage;
 
 #[cfg(windows)]
 pub enum Event {
@@ -51,7 +56,7 @@ mod app {
     use std::sync::mpsc::{channel, Receiver};
     use std::sync::{Arc, Mutex};
     use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
-    use tray_icon::{Icon, TrayIconBuilder};
+    use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -79,19 +84,22 @@ mod app {
         });
 
         let m_auto = CheckMenuItem::new("Avvia con Windows", true, platform::autostart_enabled(), None);
+        let m_set = MenuItem::new("Impostazioni...", true, None);
         let m_cfg = MenuItem::new("Apri cartella configurazione", true, None);
         let m_reload = MenuItem::new("Ricarica configurazione", true, None);
         let m_quit = MenuItem::new("Esci", true, None);
         let menu = Menu::new();
-        let _ = menu.append_items(&[&m_auto, &m_cfg, &m_reload, &PredefinedMenuItem::separator(), &m_quit]);
+        let _ = menu.append_items(&[&m_set, &m_auto, &m_cfg, &m_reload, &PredefinedMenuItem::separator(), &m_quit]);
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
+            .with_menu_on_left_click(false)
             .with_tooltip(idle_tip(&cfg.hotkey))
             .with_icon(icon(Ui::Idle))
             .build()
             .expect("impossibile creare l'icona nella tray");
 
         let menu_rx = MenuEvent::receiver();
+        let tray_rx = TrayIconEvent::receiver();
         let mut msg: MSG = unsafe { std::mem::zeroed() };
         loop {
             let r = unsafe { GetMessageW(&mut msg, null_mut(), 0, 0) };
@@ -110,8 +118,15 @@ mod app {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
+            while let Ok(e) = tray_rx.try_recv() {
+                if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = e {
+                    gui::show();
+                }
+            }
             while let Ok(e) = menu_rx.try_recv() {
-                if e.id == *m_quit.id() {
+                if e.id == *m_set.id() {
+                    gui::show();
+                } else if e.id == *m_quit.id() {
                     unsafe { PostQuitMessage(0) };
                 } else if e.id == *m_auto.id() {
                     platform::set_autostart(m_auto.is_checked());
@@ -216,7 +231,7 @@ mod app {
     fn process(wav: Vec<u8>, cfg: &config::Config, exe: &str, title: &str) -> Result<(), String> {
         let key = config::groq_key().ok_or("chiave GROQ_API_KEY mancante (file .env)")?;
         let groq = groq::Groq::new(key)?;
-        let text = groq.transcribe(wav, &cfg.stt_model, &cfg.language)?;
+        let (text, _) = usage::with_fallback(&cfg.stt_models(), |model| groq.transcribe(wav.clone(), model, &cfg.language))?;
         if text.is_empty() {
             return Ok(());
         }
@@ -225,19 +240,14 @@ mod app {
         let final_text = if raw {
             text
         } else {
-            let mut prompt = cfg.default_prompt.clone();
-            if let Some(extra) = rule.map(|r| r.prompt.as_str()).filter(|p| !p.is_empty()) {
-                prompt.push_str("\n\n");
-                prompt.push_str(extra);
+            let prompt = cfg.system_prompt(rule);
+            match usage::with_fallback(&cfg.llm_models(), |model| groq.refine(model, &prompt, &text)) {
+                Ok((refined, _)) => refined,
+                Err(e) => {
+                    config::log(&format!("AI non disponibile, incollo la trascrizione grezza: {e}"));
+                    text
+                }
             }
-            if !cfg.dictionary.is_empty() {
-                prompt.push_str("\n\nDizionario personalizzato (usa queste grafie esatte): ");
-                prompt.push_str(&cfg.dictionary.join(", "));
-            }
-            groq.refine(&cfg.llm_model, &prompt, &text).unwrap_or_else(|e| {
-                config::log(&format!("AI non disponibile, incollo la trascrizione grezza: {e}"));
-                text
-            })
         };
         let paste = rule.map_or("ctrl+v", |r| if r.paste.is_empty() { "ctrl+v" } else { r.paste.as_str() });
         let send_enter = rule.map_or(false, |r| r.send_enter);

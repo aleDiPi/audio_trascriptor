@@ -21,7 +21,7 @@ Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quan
 La GitHub Action produce `Trascrittore-Setup.exe` (artifact `trascrittore-setup`, nella pagina dell'esecuzione in *Actions*). L'installer:
 
 - installa il programma per l'utente corrente (senza permessi di amministratore) e crea la voce nel menu Start;
-- chiede la chiave Groq e la salva in `%APPDATA%\Trascrittore\.env` (opzionale, si puo' aggiungere dopo);
+- non chiede la chiave Groq: si inserisce dalle impostazioni (clic sull'icona nella tray);
 - crea `%APPDATA%\Trascrittore\config.toml` se manca (non lo sovrascrive negli aggiornamenti);
 - offre l'avvio automatico con Windows;
 - scegliendo il tipo **Programma + strumenti di sviluppo** installa anche Rust e Visual Studio Build Tools con lo stesso script di `scripts\setup-windows.ps1`. Servono solo per compilare dal sorgente, non per usare il programma.
@@ -48,11 +48,21 @@ In alternativa scarica l'exe gia' compilato dagli artifact della GitHub Action "
 
 Se `config.toml` non e' nella cartella corrente o accanto all'exe, il programma usa `%APPDATA%\Trascrittore\` (creandolo con i valori predefiniti). Menu tray (tasto destro): **Avvia con Windows**, **Apri cartella configurazione**, **Ricarica configurazione**, **Esci**.
 
+## Impostazioni (clic sull'icona nella tray)
+
+Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) apre una finestra nativa che esiste solo finche' e' aperta. Mostra:
+
+- la chiave API Groq: scrivila e premi **Verifica e salva**; il programma la prova su Groq e, se funziona, la salva in `.env` (si vedono solo le ultime 4 cifre);
+- i modelli in uso: trascrizione `whisper-large-v3-turbo` e AI `openai/gpt-oss-120b`, i modelli Groq predefiniti di OpenWhispr; in `config.toml` si possono cambiare;
+- l'utilizzo di Groq: Groq **non** espone un credito residuo (il piano gratuito ha limiti di richieste e token). La finestra mostra i limiti e i valori rimasti letti dagli header di Groq e i contatori dall'avvio, e si aggiorna da sola. I valori compaiono dopo il primo utilizzo;
+- i modelli di riserva: se Groq risponde "limite raggiunto" (HTTP 429) il programma passa in automatico al modello successivo (`fallback_models`, `stt_fallback_models`) e salta quello in pausa finche' il limite non si resetta;
+- i prompt completi inviati all'AI per ogni caso (app non riconosciuta e ogni regola `[[apps]]`).
+
 ## Configurazione (`config.toml`)
 
 - `hotkey`: scorciatoia, es. `"ctrl+win"`, `"ctrl+alt+space"`, `"f9"`.
 - `mode`: `"hold"` (tieni premuto) o `"toggle"` (premi per iniziare/finire).
-- `language`, `stt_model`, `llm_model`, `max_seconds`, `restore_clipboard`.
+- `language`, `stt_model`, `llm_model`, `fallback_models`, `stt_fallback_models`, `max_seconds`, `restore_clipboard`.
 - `default_prompt`: prompt di base sempre applicato (prompt di pulizia di [OpenWhispr](https://github.com/OpenWhispr/openwhispr), licenza MIT). Il `prompt` della regola dell'app viene aggiunto a questo.
 - `dictionary`: parole/nomi da scrivere esattamente cosi'.
 - `[[apps]]`: regole per app, con `exe` (nomi dei processi), `prompt`, `raw = true` per incollare la trascrizione senza AI, `send_enter = true` per premere Invio dopo l'incolla (es. Claude desktop, al posto dello script AutoHotkey `claude-auto-invio.ahk`), `paste = "shift+insert"` per i terminali che lo richiedono, `title_contains` per distinguere ad es. un sito nel browser.
@@ -72,4 +82,4 @@ Il prompt di pulizia del testo deriva da [OpenWhispr](https://github.com/OpenWhi
 
 ## Test
 
-`cargo test` verifica il parsing della configurazione, la scelta della regola per app (inclusi `send_enter` e `raw`) e il parsing della scorciatoia. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.
+`cargo test` verifica il parsing della configurazione, i prompt per app, il salvataggio della chiave in `.env`, il passaggio ai modelli di riserva, la scelta della regola per app (inclusi `send_enter` e `raw`) e il parsing della scorciatoia. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.

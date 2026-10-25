@@ -57,28 +57,3 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\setup-windows.ps1"""; Components: devtools; StatusMsg: "Installo Rust e Visual Studio Build Tools (puo' richiedere diversi minuti)..."; Flags: waituntilterminated
 Filename: "{app}\trascrittore.exe"; Description: "Avvia Trascrittore audio"; Flags: nowait postinstall skipifsilent
-
-[Code]
-var
-  KeyPage: TInputQueryWizardPage;
-
-procedure InitializeWizard;
-begin
-  KeyPage := CreateInputQueryPage(wpSelectTasks, 'Chiave Groq',
-    'Inserisci la tua chiave API Groq',
-    'Puoi lasciare il campo vuoto e inserirla dopo nel file .env (menu dell''icona nella tray, "Apri cartella configurazione"). ' +
-    'Chiave gratuita su https://console.groq.com/keys');
-  KeyPage.Add('GROQ_API_KEY:', True);
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  Key: String;
-begin
-  if CurStep = ssPostInstall then
-  begin
-    Key := Trim(KeyPage.Values[0]);
-    if Key <> '' then
-      SaveStringToFile(ExpandConstant('{userappdata}\Trascrittore\.env'), 'GROQ_API_KEY=' + Key + #13#10, False);
-  end;
-end;
