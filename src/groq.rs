@@ -50,20 +50,7 @@ impl Groq {
 
     /// `system` e' il prompt completo (vedi `Config::system_prompt`).
     pub fn refine(&self, model: &str, system: &str, text: &str) -> Result<String, ApiError> {
-        let mut body = serde_json::json!({
-            "model": model,
-            "temperature": 0.2,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": format!("<trascrizione>{text}</trascrizione>")}
-            ]
-        });
-        // risposta rapida: serve solo pulizia del testo, non ragionamento
-        if model.contains("gpt-oss") {
-            body["reasoning_effort"] = "low".into();
-        } else if model.contains("qwen") {
-            body["reasoning_effort"] = "none".into();
-        }
+        let body = crate::config::refine_request(model, system, text);
         let resp = self.send(
             model,
             self.client
