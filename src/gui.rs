@@ -42,6 +42,10 @@ const ID_ANTH_SAVE: i32 = 130;
 const ID_ANTH_LINK: i32 = 131;
 const ID_PROV_RESULT: i32 = 132;
 const ID_PROV_REPORT: i32 = 133;
+const ID_M_OAI_STT: i32 = 134;
+const ID_M_OAI_LLM: i32 = 135;
+const ID_M_ANT_LLM: i32 = 136;
+const ID_MODELS_SAVE: i32 = 137;
 const ID_OVERLAY: i32 = 123;
 const ID_TAB0: i32 = 200; // 200..=205: pulsanti delle sezioni
 const TABS: [&str; 6] = ["API", "Altre AI", "GitHub", "Impostazioni", "Prompt", "Info"];
@@ -240,14 +244,27 @@ unsafe fn build(hwnd: HWND) {
     child(hwnd, p, "BUTTON", "Crea chiave Anthropic", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 160, 128, 24), ID_ANTH_LINK);
     child(hwnd, p, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 186, 470, 24), ID_ANTH_KEY);
     child(hwnd, p, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 184, 128, 28), ID_ANTH_SAVE);
-    info(hwnd, p, "Le chiavi stanno in .env. Se un servizio finisce i crediti passo al successivo; modelli in config.toml (openai_llm_model, openai_stt_model, anthropic_llm_model).", (16, 218, 608, 34), ID_PROV_RESULT);
+    for (i, (label, val, id)) in [
+        ("OpenAI trascrizione", cfg.openai_stt_model.as_str(), ID_M_OAI_STT),
+        ("OpenAI correzione", cfg.openai_llm_model.as_str(), ID_M_OAI_LLM),
+        ("Anthropic correzione", cfg.anthropic_llm_model.as_str(), ID_M_ANT_LLM),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let x = 16 + i as i32 * 160;
+        child(hwnd, p, "STATIC", &format!("Modello {label}:"), 0, (x, 220, 156, 18), 0);
+        child(hwnd, p, "EDIT", val, ES_AUTOHSCROLL as u32 | WS_TABSTOP, (x, 240, 150, 24), id);
+    }
+    child(hwnd, p, "BUTTON", "Salva modelli", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 238, 128, 28), ID_MODELS_SAVE);
+    info(hwnd, p, "Le chiavi stanno in .env. Se un servizio finisce i crediti passo al successivo. I modelli leggeri bastano per correggere il testo.", (16, 272, 608, 34), ID_PROV_RESULT);
     child(
         hwnd,
         p,
         "EDIT",
         &provider_text(),
         (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | WS_VSCROLL,
-        (16, 258, 608, 270),
+        (16, 312, 608, 216),
         ID_PROV_REPORT,
     );
 
@@ -628,6 +645,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 ID_OPENLOG => config::open_log(),
                 ID_GROQ_LINK => open_url(GROQ_KEYS_URL),
                 ID_ORDER_SAVE => on_order_save(hwnd),
+                ID_MODELS_SAVE => {
+                    let t = |id| get_text(GetDlgItem(hwnd, id));
+                    config::set_provider_models(&t(ID_M_OAI_STT), &t(ID_M_OAI_LLM), &t(ID_M_ANT_LLM));
+                    set_text(GetDlgItem(hwnd, ID_PROV_RESULT), "Modelli salvati: valgono dalla prossima dettatura. Campi vuoti o con spazi ignorati.");
+                }
                 ID_OPENAI_SAVE => on_provider_save(hwnd, Provider::OpenAi, ID_OPENAI_KEY, ID_OPENAI_SAVE),
                 ID_ANTH_SAVE => on_provider_save(hwnd, Provider::Anthropic, ID_ANTH_KEY, ID_ANTH_SAVE),
                 ID_OPENAI_LINK => open_url(Provider::OpenAi.keys_url()),
