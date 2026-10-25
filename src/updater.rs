@@ -103,7 +103,11 @@ pub fn check_and_apply(token: &str) -> Result<bool, String> {
         std::thread::sleep(Duration::from_secs(10));
     }
     config::log(&format!("aggiornamento alla versione {}", release::short(&rel.commit)));
-    if !rel.installer_required {
+    let exe_dir_writable = std::env::current_exe().ok().and_then(|p| p.parent().map(release::dir_writable)).unwrap_or(false);
+    if !rel.installer_required && !exe_dir_writable {
+        config::debug(|| "cartella del programma non scrivibile (Program Files): uso l'installer".into());
+    }
+    if !rel.installer_required && exe_dir_writable {
         match swap_in_place(token, &rel) {
             Ok(()) => {}
             Err(e) => config::log(&format!("aggiornamento in-place non riuscito, uso l'installer: {e}")),

@@ -64,6 +64,14 @@ pub fn needs_update(current: Option<&str>, remote: &str) -> bool {
 }
 
 /// L'installer scaricato va eseguito solo se il suo SHA-256 coincide con quello dichiarato da GitHub.
+/// Vero se si puo' creare e cancellare un file nella cartella (es. non in Program Files senza amministratore).
+pub fn dir_writable(dir: &std::path::Path) -> bool {
+    let probe = dir.join(format!(".scrittura-{}.tmp", std::process::id()));
+    let ok = std::fs::write(&probe, b"").is_ok();
+    let _ = std::fs::remove_file(&probe);
+    ok
+}
+
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -137,5 +145,11 @@ mod tests {
     #[test]
     fn hex_is_lowercase_and_padded() {
         assert_eq!(hex(&[0x00, 0x0a, 0xff]), "000aff");
+    }
+
+    #[test]
+    fn writable_dir_detection() {
+        assert!(dir_writable(&std::env::temp_dir()));
+        assert!(!dir_writable(&std::env::temp_dir().join("trascrittore-cartella-inesistente-xyz")));
     }
 }

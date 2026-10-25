@@ -20,10 +20,11 @@ Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quan
 
 La GitHub Action produce `Trascrittore-Setup.exe` (artifact `trascrittore-setup`, nella pagina dell'esecuzione in *Actions*). L'installer:
 
-- installa il programma per tutto il PC in `C:\ProgramData\Trascrittore` (chiede i permessi di amministratore una volta; la cartella e' scrivibile dagli utenti del PC, cosi' l'aggiornamento automatico sostituisce l'exe senza richiedere ogni volta l'UAC) e crea la voce nel menu Start;
+- installa il programma per tutto il PC in `C:\Program Files\Trascrittore` (chiede i permessi di amministratore; build a 64 bit, vedi sotto) e crea la voce nel menu Start. Configurazione, chiavi e log stanno in `C:\ProgramData\Trascrittore`, scrivibile dagli utenti del PC;
 - non chiede la chiave Groq (si inserisce dalle impostazioni, clic sull'icona nella tray); chiede invece, facoltativo, il token GitHub per gli aggiornamenti automatici (la pagina contiene i passaggi per crearlo e il link diretto a GitHub);
-- crea `config.toml` e `.env` nella stessa cartella se mancano (non li sovrascrive negli aggiornamenti); se arrivi dalla vecchia installazione per-utente, li copia da `%APPDATA%\Trascrittore`;
+- crea `config.toml` e `.env` nella stessa cartella se mancano (non li sovrascrive negli aggiornamenti); se arrivi dalla vecchia installazione per-utente, li copia da `%APPDATA%\Trascrittore`; se il programma era in `C:\ProgramData\Trascrittore` lo sposta in Program Files;
 - offre l'avvio automatico con Windows;
+- **la disinstallazione cancella tutto**: programma, `C:\ProgramData\Trascrittore` (config, chiavi in `.env`, log), le vecchie cartelle `%APPDATA%\Trascrittore` e `%LOCALAPPDATA%\Programs\Trascrittore`, i download temporanei degli aggiornamenti e la voce di avvio automatico dell'utente che disinstalla (non si tocca nulla negli altri profili utente);
 - scegliendo il tipo **Programma + strumenti di sviluppo** installa anche Rust e Visual Studio Build Tools con lo stesso script di `scripts\setup-windows.ps1`. Servono solo per compilare dal sorgente, non per usare il programma.
 
 Per generarlo a mano: `cargo build --release`, poi `ISCC.exe /DAppVersion=0.1.0 installer\trascrittore.iss` (richiede [Inno Setup 6](https://jrsoftware.org/isinfo.php)).
@@ -46,7 +47,7 @@ Per generarlo a mano: `cargo build --release`, poi `ISCC.exe /DAppVersion=0.1.0 
 
 In alternativa scarica l'exe gia' compilato dagli artifact della GitHub Action "Build Windows".
 
-Il programma cerca `config.toml` nella cartella corrente, accanto all'exe e infine in `%APPDATA%\Trascrittore\`; se non lo trova usa quest'ultima (creandolo con i valori predefiniti). Menu tray (tasto destro): **Avvia con Windows**, **Apri cartella configurazione**, **Ricarica configurazione**, **Esci**.
+Il programma cerca `config.toml` nella cartella corrente, accanto all'exe, in `%ProgramData%\Trascrittore\` e infine in `%APPDATA%\Trascrittore\`; se non lo trova usa quest'ultima (creandolo con i valori predefiniti). Menu tray (tasto destro): **Avvia con Windows**, **Apri cartella configurazione**, **Ricarica configurazione**, **Esci**.
 
 ## Modalita' debug e log
 
@@ -62,6 +63,10 @@ Nei primi test attiva la **modalita' debug**: dal menu dell'icona nella tray (*M
 
 Senza debug il log contiene solo avvio, errori e avvisi. **Non** scrive mai chiavi API o token. Il testo dettato compare nel log solo se aggiungi anche `debug_log_text = true` (e' privato: attivalo solo per cercare un problema).
 
+## Architettura (x64, ARM64)
+
+Il programma e l'installer sono compilati per **x64** (`x86_64-pc-windows-msvc`, il target predefinito di `windows-latest` nella GitHub Action) e si installano in modalita' 64 bit. Su Windows 11 per ARM64 l'installer parte e il programma gira tramite l'emulazione x64 di Windows, ma non c'e' una build ARM64 nativa e non e' stato provato. Windows a 32 bit non e' supportato.
+
 ## Aggiornamenti automatici (facoltativi)
 
 Il repository e' privato, quindi per aggiornarsi da solo il programma ha bisogno di un token GitHub di **sola lettura**:
@@ -71,7 +76,7 @@ Il repository e' privato, quindi per aggiornarsi da solo il programma ha bisogno
 3. *Permissions*, *Repository permissions*: **Contents: Read-only** (nient'altro). Scegli una scadenza (es. 1 anno) e crea il token.
 4. Incolla il token nell'installer (pagina "Aggiornamenti automatici") oppure nella finestra Impostazioni, *Verifica e salva*. Viene salvato solo sul tuo PC, in `.env` accanto al programma (`TRASCRITTORE_UPDATE_TOKEN`); non e' mai dentro l'eseguibile ne' nel repository.
 
-Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge la release `latest`. Se il commit e' diverso dal suo, scarica **solo `trascrittore.exe`** (pochi MB), controlla lo SHA-256 dichiarato da GitHub, rinomina l'eseguibile in uso, mette il nuovo al suo posto e si riavvia. Se la verifica fallisce non cambia nulla; se lo scambio non e' possibile (cartella non scrivibile) usa l'installer completo in modalita' silenziosa. L'installer completo viene usato anche quando un aggiornamento e' marcato `[installer]` nel titolo della PR (modifiche strutturali). Durante una dettatura l'aggiornamento aspetta. Sicurezza: tutti gli utenti del PC possono leggere `.env` e sostituire l'exe in `C:\ProgramData\Trascrittore`; l'installazione e' pensata per un PC personale. Senza token gli aggiornamenti sono manuali: scarica `Trascrittore-Setup.exe` dalla pagina Release. Le build locali (`cargo build`) non si aggiornano mai.
+Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge la release `latest`. Se il commit e' diverso dal suo, scarica **solo `trascrittore.exe`** (pochi MB), controlla lo SHA-256 dichiarato da GitHub, rinomina l'eseguibile in uso, mette il nuovo al suo posto e si riavvia (succede solo se la cartella del programma e' scrivibile, per esempio in una build locale). Con l'installer in Program Files il programma non puo' sostituirsi da solo senza amministratore: scarica `Trascrittore-Setup.exe` e lo avvia in modalita' silenziosa, e Windows mostra **una richiesta di amministratore (UAC) a ogni aggiornamento**; se la rifiuti non cambia nulla e riprova al controllo successivo. L'installer completo viene usato anche quando un aggiornamento e' marcato `[installer]` nel titolo della PR (modifiche strutturali). Durante una dettatura l'aggiornamento aspetta. Sicurezza: l'exe in Program Files non e' modificabile senza amministratore, ma gli utenti del PC possono leggere e modificare `.env` in `C:\ProgramData\Trascrittore` (chiavi comprese): l'installazione e' pensata per un PC personale. Senza token gli aggiornamenti sono manuali: scarica `Trascrittore-Setup.exe` dalla pagina Release. Le build locali (`cargo build`) non si aggiornano mai.
 
 ## Impostazioni (clic sull'icona nella tray)
 
