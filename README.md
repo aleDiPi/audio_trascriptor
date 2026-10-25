@@ -16,7 +16,11 @@ Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quan
 
 ## Compilare ed eseguire su Windows
 
-1. Installa [Rust](https://rustup.rs) (con gli strumenti C++ di Visual Studio Build Tools, richiesti da rustup).
+1. Installa Visual Studio Build Tools (strumenti C++) e Rust con un solo comando (PowerShell, usa winget e salta cio' che hai gia'; Windows chiedera' conferma UAC):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+   ```
+   Poi chiudi e riapri il terminale.
 2. Nella cartella del progetto:
    ```powershell
    git pull
