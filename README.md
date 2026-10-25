@@ -88,7 +88,7 @@ Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) a
 
 1. **API**: la chiave Groq (**Verifica e salva**: la prova su Groq e, se funziona, la salva in `.env`; si vedono solo le ultime 4 cifre; **Crea chiave Groq** apre la pagina), i modelli in uso, l'utilizzo di Groq e i modelli di riserva. Groq **non** espone un credito residuo (il piano gratuito ha limiti di richieste e token): la finestra mostra i limiti e i valori rimasti letti dagli header e i contatori dall'avvio. Se Groq risponde "limite raggiunto" (HTTP 429) il programma passa al modello successivo (`fallback_models`, `stt_fallback_models`) e salta quello in pausa. Altri servizi di riserva non sono ancora supportati.
 2. **GitHub**: il token degli aggiornamenti (inserimento, **Verifica e salva**, **Rimuovi token**, **Crea token GitHub**).
-3. **Impostazioni**: aggiornamenti automatici, modalita' debug, testo dettato nel log (`debug_log_text`), apertura di log e cartella di configurazione.
+3. **Impostazioni**: aggiornamenti automatici, icona con alone (`overlay`), modalita' debug, testo dettato nel log (`debug_log_text`), apertura di log e cartella di configurazione.
 4. **Prompt**: i prompt completi inviati all'AI, scelti da un elenco per tipo di applicazione (app non riconosciuta e ogni regola `[[apps]]`, con il nome dato da `name`).
 5. **Info**: versione e stato degli aggiornamenti, percorsi, scorciatoia, modelli e descrizione del programma.
 
@@ -113,9 +113,13 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 - Vedi `SECURITY.md` per la gestione dei segreti.
 
 
+## Icona con alone
+
+Mentre tieni premuta la scorciatoia compare in basso a destra (sullo schermo della finestra attiva) un cerchio scuro con l'icona del programma in cui verra' incollato il testo, circondato da un alone rosso che si allarga con il volume del microfono e si restringe quando taci. Durante la trascrizione l'alone diventa ambra e "respira"; poi sparisce. La finestra non prende il focus, non intercetta i clic ed e' nascosta (nessun timer) quando non serve. Si disattiva dalla sezione Impostazioni o con `overlay = false` in `config.toml`.
+
 ## Test
 
-`cargo test` verifica il parsing della configurazione, l'interruttore `debug` in `config.toml`, il formato della data nel log, i prompt per app, il salvataggio della chiave in `.env`, la lettura della release di aggiornamento (URL ammessi, SHA-256, marcatore `[installer]`), il passaggio ai modelli di riserva, la scelta della regola per app (inclusi `send_enter` e `raw`) e il parsing della scorciatoia. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.
+`cargo test` verifica il parsing della configurazione, l'interruttore `debug` in `config.toml`, il formato della data nel log, i prompt per app, il salvataggio della chiave in `.env`, la lettura della release di aggiornamento (URL ammessi, SHA-256, marcatore `[installer]`), il passaggio ai modelli di riserva, la scelta della regola per app (inclusi `send_enter` e `raw`) il parsing della scorciatoia e la matematica dell'alone (livello in dB, raggio, lisciatura). Il disegno della finestra non e' testabile in automatico. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.
 
 ## Spazio occupato
 

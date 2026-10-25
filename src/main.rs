@@ -22,6 +22,11 @@ mod groq;
 mod gui;
 #[cfg(windows)]
 mod hotkey;
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
+mod levels;
+#[cfg(windows)]
+mod overlay;
 #[cfg(windows)]
 mod platform;
 #[cfg(any(windows, test))]
@@ -98,6 +103,7 @@ mod app {
             })
         };
         hotkey::install(ev_tx.clone());
+        overlay::start();
         updater::start_background();
         std::thread::spawn({
             let notify = notify.clone();
@@ -220,6 +226,7 @@ mod app {
                             Ok(r) => {
                                 rec = Some((r, exe, title));
                                 updater::BUSY.store(true, std::sync::atomic::Ordering::Relaxed);
+                                overlay::show_recording(platform::foreground_icon());
                                 notify(Ui::Recording, "Trascrittore - registrazione...".into());
                             }
                             Err(e) => {
@@ -247,14 +254,17 @@ mod app {
         let Some((r, exe, title)) = rec.take() else { return };
         let Some(wav) = r.finish() else {
             updater::BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
+            overlay::hide();
             notify(Ui::Idle, String::new());
             return;
         };
+        overlay::show_processing();
         notify(Ui::Working, "Trascrittore - elaborazione...".into());
         let (cfg, notify) = (cfg.clone(), notify.clone());
         std::thread::spawn(move || {
             let result = process(wav, &cfg, &exe, &title);
             updater::BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
+            overlay::hide();
             match result {
                 Ok(()) => notify(Ui::Idle, String::new()),
                 Err(e) => {

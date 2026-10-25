@@ -12,6 +12,7 @@ const DEFAULT_ENV: &str = include_str!("../.env.example");
 static DIR: OnceLock<PathBuf> = OnceLock::new();
 static DEBUG: AtomicBool = AtomicBool::new(false);
 static TEXT_FLAG: AtomicBool = AtomicBool::new(false);
+static OVERLAY: AtomicBool = AtomicBool::new(true);
 static AUTO_UPDATE: AtomicBool = AtomicBool::new(true);
 
 /// Regole fisse aggiunte a ogni prompt di rifinitura.
@@ -33,6 +34,8 @@ pub struct Config {
     pub restore_clipboard: bool,
     /// Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)
     pub debug: bool,
+    /// Icona in basso a destra con l'alone del volume mentre la scorciatoia e' attiva
+    pub overlay: bool,
     /// Controllo e installazione automatica degli aggiornamenti (serve anche il token GitHub)
     pub auto_update: bool,
     /// In debug scrive nel log anche il testo dettato (disattivato di default: e' privato)
@@ -80,6 +83,7 @@ impl Default for Config {
             max_seconds: 120,
             restore_clipboard: true,
             debug: false,
+            overlay: true,
             auto_update: true,
             debug_log_text: false,
             default_prompt: "Correggi punteggiatura ed errori del testo dettato, senza cambiarne il significato.".into(),
@@ -197,6 +201,7 @@ pub fn load() -> Config {
     let c = load_raw();
     DEBUG.store(c.debug, Ordering::Relaxed);
     TEXT_FLAG.store(c.debug_log_text, Ordering::Relaxed);
+    OVERLAY.store(c.overlay, Ordering::Relaxed);
     AUTO_UPDATE.store(c.auto_update, Ordering::Relaxed);
     c
 }
@@ -336,6 +341,19 @@ pub fn set_debug_log_text(on: bool) {
         let _ = std::fs::write(&path, set_toml_bool(&text, "debug_log_text", on));
     }
     log(&format!("testo dettato nel log {}", if on { "attivato" } else { "disattivato" }));
+}
+
+pub fn overlay_enabled() -> bool {
+    OVERLAY.load(Ordering::Relaxed)
+}
+
+/// Attiva/disattiva l'icona con l'alone e lo scrive in config.toml (`overlay = ...`).
+pub fn set_overlay(on: bool) {
+    OVERLAY.store(on, Ordering::Relaxed);
+    let path = dir().join("config.toml");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let _ = std::fs::write(&path, set_toml_bool(&text, "overlay", on));
+    }
 }
 
 pub fn debug_enabled() -> bool {
@@ -791,5 +809,12 @@ mod tests {
         DEBUG.store(true, Ordering::Relaxed);
         TEXT_FLAG.store(false, Ordering::Relaxed);
         assert!(!debug_text_enabled());
+    }
+
+    #[test]
+    fn overlay_defaults_on_and_parses() {
+        assert!(Config::default().overlay && example().overlay);
+        let off: Config = toml::from_str("overlay = false").unwrap();
+        assert!(!off.overlay);
     }
 }
