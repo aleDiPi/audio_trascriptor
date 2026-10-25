@@ -87,7 +87,7 @@ Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge l'u
 Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) apre una finestra (interfaccia [Slint](https://slint.dev) con renderer software, nitida a qualsiasi scala di Windows) che esiste solo finche' e' aperta. Le sezioni sono nella barra a sinistra:
 
 1. **Home**: riepilogo all'apertura: modello AI e di trascrizione che risponderanno ora, servizi in ordine di priorita' e se hanno la chiave, scorciatoia, versione e aggiornamenti, utilizzo dall'avvio.
-2. **AI**: una tessera per servizio (Groq, OpenAI, Anthropic). Ogni tessera mostra stato (pronto, in pausa e perche', nessuna chiave), chiave (**Verifica e salva**, **Rimuovi**, **Crea chiave**; si vedono solo le ultime 4 cifre; salvata in `.env`), modelli, contatori dall'avvio e il link alla pagina del credito (nessuno dei tre lo espone via API). **Trascina** le tessere con la maniglia a sinistra per cambiare la priorita' (`providers` in `config.toml`); la casella *Usa* esclude un servizio. Se un servizio finisce i crediti o rifiuta la chiave si passa al successivo; per Groq anche ai modelli di riserva (`fallback_models`, `stt_fallback_models`) con i limiti letti dagli header.
+2. **AI**: una tessera per servizio (Groq, OpenAI, Anthropic e, ultima, la trascrizione locale con Whisper). Ogni tessera mostra stato (pronto, in pausa e perche', nessuna chiave), chiave (**Verifica e salva**, **Rimuovi**, **Crea chiave**; si vedono solo le ultime 4 cifre; salvata in `.env`), modelli, contatori dall'avvio e il link alla pagina del credito (nessuno dei tre lo espone via API). **Trascina** le tessere con la maniglia a sinistra per cambiare la priorita' (`providers` in `config.toml`); la casella *Usa* esclude un servizio. Se un servizio finisce i crediti o rifiuta la chiave si passa al successivo; per Groq anche ai modelli di riserva (`fallback_models`, `stt_fallback_models`) con i limiti letti dagli header.
 3. **Prompt**: i prompt completi inviati all'AI, scelti da un elenco per tipo di applicazione (app non riconosciuta e ogni regola `[[apps]]`, con il nome dato da `name`).
 4. **Impostazioni**: icona con alone (`overlay`), **suoni** di inizio e fine registrazione (attivi/spenti, tipo *Morbido*, *Click* o *Campanello*, volume, pulsante *Prova*; `sounds`, `sound_style`, `sound_volume` in `config.toml`) e apertura della cartella di configurazione.
 5. **Info**: versione, aggiornamenti automatici (**Verifica aggiornamenti**, **Aggiorna ora**), token GitHub (**Verifica e salva**, **Rimuovi token**, **Crea token**), modalita' debug, testo dettato nel log (`debug_log_text`), apertura del log, percorsi e descrizione del programma.
@@ -95,6 +95,16 @@ Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) a
 L'exe ha un manifest con DPI per monitor (`assets/app.manifest`): senza, Windows ingrandisce le finestre come immagini e il testo risulta sfocato. L'icona con alone resta non scalata dal sistema, come prima.
 
 I testi sono selezionabili e copiabili.
+
+## Trascrizione locale (Whisper)
+
+Come **ultima risorsa**, quando nessun servizio in rete risponde (crediti finiti, chiave rifiutata, niente rete), l'audio viene trascritto sul tuo PC con Whisper ([whisper.cpp](https://github.com/ggml-org/whisper.cpp)). E' la quarta tessera della sezione **AI** (`local` in `providers`, ultima per impostazione predefinita, trascinabile e escludibile con *Usa*). Chi aveva gia' un `config.toml` la trova aggiunta in coda una sola volta (`local_migrated = true`); se la togli non viene rimessa.
+
+- Il modello **non e' nell'installer**: si sceglie la dimensione (`local_model`: `tiny` ~75 MB, `base` ~142 MB consigliato, `small` ~466 MB, `medium` ~1,5 GB; modelli multilingua, adatti all'italiano) e si scarica col pulsante **Scarica** (con avanzamento e **Annulla**) da Hugging Face in `models\` accanto a `config.toml`. Il file scaricato e' controllato con il numero magico e, quando Hugging Face lo dichiara, con lo SHA-256. **Elimina** lo cancella; la disinstallazione rimuove tutta la cartella dati, modelli compresi.
+- Il modello viene caricato solo durante la trascrizione e liberato subito dopo: a riposo non occupa RAM. Su CPU e' piu' lento del cloud (qualche secondo per una frase con `base`, di piu' con `small` e `medium`).
+- Whisper locale **trascrive soltanto**: se anche l'AI di correzione e' fuori uso, il testo non viene corretto e viene incollata la trascrizione grezza. Se invece un servizio in rete funziona ancora per la correzione, il testo viene corretto come sempre.
+- Nessun dato esce dal PC mentre usa il locale. Non serve credito ne' chiave.
+- La build compila whisper.cpp (serve CMake e libclang; sul runner di GitHub ci sono gia', vedi `LIBCLANG_PATH` in `.github/workflows/build.yml`). L'exe cresce di qualche MB.
 
 ## Suoni
 

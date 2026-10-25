@@ -29,10 +29,13 @@ auto_update = true
 
 # Servizi AI in ordine di priorita': se uno finisce i crediti passo al successivo.
 # Servono le chiavi GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY in .env (Anthropic non trascrive l'audio).
-providers = ["groq", "openai", "anthropic"]
+providers = ["groq", "openai", "anthropic", "local"]
 openai_stt_model = "gpt-4o-mini-transcribe"
 openai_llm_model = "gpt-4.1-nano"
 anthropic_llm_model = "claude-haiku-5-5"
+# "local" = Whisper sul PC, ultima risorsa se nessun servizio in rete risponde (trascrive soltanto: il testo non viene corretto).
+# Il modello non e' incluso: si scarica dalle Impostazioni > AI. local_model: tiny, base, small o medium.
+local_model = "base"
 
 # Icona in basso a destra mentre tieni premuta la scorciatoia: mostra l'app dove verra' incollato il testo, con un alone che segue il volume. Si cambia anche dalle Impostazioni.
 overlay = true
