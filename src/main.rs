@@ -10,7 +10,11 @@ fn main() {
 
 #[cfg(windows)]
 mod audio;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
+mod combo;
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
 mod config;
 #[cfg(windows)]
 mod groq;
@@ -125,7 +129,7 @@ mod app {
     }
 
     fn apply_hotkey(s: &str) {
-        match hotkey::parse(s) {
+        match combo::parse(s) {
             Ok(c) => hotkey::set_combo(c),
             Err(e) => config::log(&format!("hotkey '{s}' non valida ({e}), uso ctrl+win")),
         }

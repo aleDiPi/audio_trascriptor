@@ -16,7 +16,11 @@ Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quan
 
 ## Compilare ed eseguire su Windows
 
-1. Installa [Rust](https://rustup.rs) (con gli strumenti C++ di Visual Studio Build Tools, richiesti da rustup).
+1. Installa Visual Studio Build Tools (strumenti C++) e Rust con un solo comando (PowerShell, usa winget e salta cio' che hai gia'; Windows chiedera' conferma UAC):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+   ```
+   Poi chiudi e riapri il terminale.
 2. Nella cartella del progetto:
    ```powershell
    git pull
@@ -51,3 +55,7 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 ## Crediti
 
 Il prompt di pulizia del testo deriva da [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT, © OpenWhispr Team).
+
+## Test
+
+`cargo test` verifica il parsing della configurazione, la scelta della regola per app (inclusi `send_enter` e `raw`) e il parsing della scorciatoia. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.

@@ -2,21 +2,13 @@
 //! Serve (invece di RegisterHotKey) perche' permette combinazioni di soli modificatori,
 //! come il predefinito Ctrl+Win, e il rilascio dei tasti per la modalita' "tieni premuto".
 
+use crate::combo::Combo;
 use crate::Event;
 use std::ptr::null_mut;
 use std::sync::mpsc::Sender;
 use std::sync::{Mutex, OnceLock};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
-
-#[derive(Clone, Copy, Default, Debug)]
-pub struct Combo {
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-    win: bool,
-    key: Option<u32>,
-}
 
 struct State {
     combo: Combo,
@@ -30,33 +22,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     active: false,
 });
 static TX: OnceLock<Sender<Event>> = OnceLock::new();
-
-pub fn parse(s: &str) -> Result<Combo, String> {
-    let mut c = Combo::default();
-    for part in s.split('+').map(|p| p.trim().to_lowercase()) {
-        match part.as_str() {
-            "ctrl" | "control" => c.ctrl = true,
-            "alt" => c.alt = true,
-            "shift" => c.shift = true,
-            "win" | "windows" | "super" => c.win = true,
-            "space" => c.key = Some(0x20),
-            "tab" => c.key = Some(0x09),
-            "enter" | "invio" => c.key = Some(0x0D),
-            "esc" => c.key = Some(0x1B),
-            p if p.len() == 1 && p.as_bytes()[0].is_ascii_alphanumeric() => {
-                c.key = Some(p.as_bytes()[0].to_ascii_uppercase() as u32)
-            }
-            p if p.starts_with('f') && p[1..].parse::<u32>().map_or(false, |n| (1..=24).contains(&n)) => {
-                c.key = Some(0x70 + p[1..].parse::<u32>().unwrap() - 1)
-            }
-            other => return Err(format!("tasto sconosciuto: '{other}'")),
-        }
-    }
-    if !(c.ctrl || c.alt || c.shift || c.win) && c.key.is_none() {
-        return Err("scorciatoia vuota".into());
-    }
-    Ok(c)
-}
 
 pub fn set_combo(c: Combo) {
     let mut s = STATE.lock().unwrap();
