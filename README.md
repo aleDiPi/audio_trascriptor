@@ -14,7 +14,19 @@ Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quan
 | Sicurezza | `.env.example`, `.gitignore`, `SECURITY.md` (e in locale `.env`, `config.toml`) | solo i modelli; `.env` e `config.toml` mai |
 | Secondari | `target/`, `*.log`, `recordings/`, `local/`, `notes/`, `tmp/` | no (ignorati) |
 
-## Compilare ed eseguire su Windows
+## Installer (consigliato)
+
+La GitHub Action produce `Trascrittore-Setup.exe` (artifact `trascrittore-setup`, nella pagina dell'esecuzione in *Actions*). L'installer:
+
+- installa il programma per l'utente corrente (senza permessi di amministratore) e crea la voce nel menu Start;
+- chiede la chiave Groq e la salva in `%APPDATA%\Trascrittore\.env` (opzionale, si puo' aggiungere dopo);
+- crea `%APPDATA%\Trascrittore\config.toml` se manca (non lo sovrascrive negli aggiornamenti);
+- offre l'avvio automatico con Windows;
+- scegliendo il tipo **Programma + strumenti di sviluppo** installa anche Rust e Visual Studio Build Tools con lo stesso script di `scripts\setup-windows.ps1`. Servono solo per compilare dal sorgente, non per usare il programma.
+
+Per generarlo a mano: `cargo build --release`, poi `ISCC.exe /DAppVersion=0.1.0 installer\trascrittore.iss` (richiede [Inno Setup 6](https://jrsoftware.org/isinfo.php)).
+
+## Compilare ed eseguire su Windows dal sorgente
 
 1. Installa Visual Studio Build Tools (strumenti C++) e Rust con un solo comando (PowerShell, usa winget e salta cio' che hai gia'; Windows chiedera' conferma UAC):
    ```powershell
