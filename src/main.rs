@@ -76,6 +76,15 @@ mod app {
         // installer scaricato da un aggiornamento precedente (se e' ancora in uso resta fino al prossimo avvio)
         let _ = std::fs::remove_dir_all(std::env::temp_dir().join("Trascrittore-Update"));
         let cfg = config::load();
+        config::log(&format!(
+            "avvio: versione {} ({}), cartella {}, hotkey {}, modalita' {}, debug {}",
+            env!("CARGO_PKG_VERSION"),
+            release::current_commit().map_or("build locale", release::short),
+            config::dir().display(),
+            cfg.hotkey,
+            cfg.mode,
+            if cfg.debug { "attivo" } else { "spento" }
+        ));
         apply_hotkey(&cfg.hotkey);
 
         let (ev_tx, ev_rx) = channel::<Event>();
@@ -98,10 +107,12 @@ mod app {
         let m_auto = CheckMenuItem::new("Avvia con Windows", true, platform::autostart_enabled(), None);
         let m_set = MenuItem::new("Impostazioni...", true, None);
         let m_cfg = MenuItem::new("Apri cartella configurazione", true, None);
+        let m_dbg = CheckMenuItem::new("Modalita' debug (log dettagliato)", true, cfg.debug, None);
+        let m_log = MenuItem::new("Apri log", true, None);
         let m_reload = MenuItem::new("Ricarica configurazione", true, None);
         let m_quit = MenuItem::new("Esci", true, None);
         let menu = Menu::new();
-        let _ = menu.append_items(&[&m_set, &m_auto, &m_cfg, &m_reload, &PredefinedMenuItem::separator(), &m_quit]);
+        let _ = menu.append_items(&[&m_set, &m_auto, &m_dbg, &m_log, &m_cfg, &m_reload, &PredefinedMenuItem::separator(), &m_quit]);
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
@@ -142,6 +153,10 @@ mod app {
                     unsafe { PostQuitMessage(0) };
                 } else if e.id == *m_auto.id() {
                     platform::set_autostart(m_auto.is_checked());
+                } else if e.id == *m_dbg.id() {
+                    config::set_debug(m_dbg.is_checked());
+                } else if e.id == *m_log.id() {
+                    config::open_log();
                 } else if e.id == *m_cfg.id() {
                     let _ = std::process::Command::new("explorer").arg(config::dir()).spawn();
                 } else if e.id == *m_reload.id() {
@@ -188,16 +203,19 @@ mod app {
             match ev {
                 Event::Reload => {
                     cfg = config::load();
+                    config::debug(|| "configurazione ricaricata".into());
                     apply_hotkey(&cfg.hotkey);
                     notify(Ui::Idle, String::new());
                 }
                 Event::HotkeyDown => {
+                    config::debug(|| format!("hotkey premuta (registrazione in corso: {})", rec.is_some()));
                     if rec.is_some() {
                         if cfg.is_toggle() {
                             finish(&mut rec, &cfg, &notify);
                         }
                     } else {
                         let (exe, title) = platform::foreground_app();
+                        config::debug(|| format!("app in primo piano: '{exe}', titolo '{title}'"));
                         match audio::start(cfg.max_seconds) {
                             Ok(r) => {
                                 rec = Some((r, exe, title));
@@ -212,6 +230,7 @@ mod app {
                     }
                 }
                 Event::HotkeyUp => {
+                    config::debug(|| format!("hotkey rilasciata (registrazione in corso: {})", rec.is_some()));
                     if !cfg.is_toggle() && rec.is_some() {
                         finish(&mut rec, &cfg, &notify);
                     }
@@ -249,18 +268,30 @@ mod app {
     fn process(wav: Vec<u8>, cfg: &config::Config, exe: &str, title: &str) -> Result<(), String> {
         let key = config::groq_key().ok_or("chiave GROQ_API_KEY mancante (file .env)")?;
         let groq = groq::Groq::new(key)?;
-        let (text, _) = usage::with_fallback(&cfg.stt_models(), |model| groq.transcribe(wav.clone(), model, &cfg.language))?;
+        config::debug(|| format!("invio audio a Groq: {} KB, lingua '{}'", wav.len() / 1024, cfg.language));
+        let (text, stt_model) = usage::with_fallback(&cfg.stt_models(), |model| groq.transcribe(wav.clone(), model, &cfg.language))?;
+        config::debug(|| format!("trascrizione ricevuta con {stt_model}: {} caratteri", text.chars().count()));
+        config::debug_text("trascrizione", &text);
         if text.is_empty() {
+            config::debug(|| "trascrizione vuota: non incollo nulla".into());
             return Ok(());
         }
         let rule = cfg.rule_for(exe, title);
+        config::debug(|| match rule {
+            Some(r) => format!("regola app: {} (raw: {}, invio: {})", r.exe.join(", "), r.raw, r.send_enter),
+            None => "nessuna regola per questa app: uso il prompt di base".into(),
+        });
         let raw = rule.map_or(false, |r| r.raw);
         let final_text = if raw {
             text
         } else {
             let prompt = cfg.system_prompt(rule);
             match usage::with_fallback(&cfg.llm_models(), |model| groq.refine(model, &prompt, &text)) {
-                Ok((refined, _)) => refined,
+                Ok((refined, llm_model)) => {
+                    config::debug(|| format!("testo rifinito con {llm_model}: {} caratteri", refined.chars().count()));
+                    config::debug_text("rifinito", &refined);
+                    refined
+                }
                 Err(e) => {
                     config::log(&format!("AI non disponibile, incollo la trascrizione grezza: {e}"));
                     text
@@ -269,6 +300,7 @@ mod app {
         };
         let paste = rule.map_or("ctrl+v", |r| if r.paste.is_empty() { "ctrl+v" } else { r.paste.as_str() });
         let send_enter = rule.map_or(false, |r| r.send_enter);
+        config::debug(|| format!("incollo {} caratteri ({paste}, invio: {send_enter})", final_text.chars().count()));
         platform::paste_text(&final_text, paste, cfg.restore_clipboard, send_enter)
     }
 }

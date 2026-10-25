@@ -48,6 +48,18 @@ In alternativa scarica l'exe gia' compilato dagli artifact della GitHub Action "
 
 Se `config.toml` non e' nella cartella corrente o accanto all'exe, il programma usa `%APPDATA%\Trascrittore\` (creandolo con i valori predefiniti). Menu tray (tasto destro): **Avvia con Windows**, **Apri cartella configurazione**, **Ricarica configurazione**, **Esci**.
 
+## Modalita' debug e log
+
+Nei primi test attiva la **modalita' debug**: dal menu dell'icona nella tray (*Modalita' debug*), dalla finestra Impostazioni oppure con `debug = true` in `config.toml`. Il log (*Apri log* nel menu o nelle Impostazioni) si trova in `%APPDATA%\Trascrittore\trascrittore.log` (accanto a `config.toml`; la finestra Impostazioni ne mostra il percorso) e contiene data e ora UTC, e per ogni dettatura:
+
+- hotkey premuta/rilasciata e app in primo piano (nome del programma e titolo della finestra);
+- microfono usato, frequenza, durata registrata e livello del segnale (utile se il microfono predefinito di Windows e' sbagliato o muto);
+- ogni chiamata a Groq: modello, esito HTTP, tempo in millisecondi, token usati; i modelli candidati e il passaggio a quelli di riserva;
+- la regola per app scelta, quanti caratteri vengono incollati, con quale scorciatoia e se viene premuto Invio;
+- i controlli di aggiornamento.
+
+Senza debug il log contiene solo avvio, errori e avvisi. **Non** scrive mai chiavi API o token. Il testo dettato compare nel log solo se aggiungi anche `debug_log_text = true` (e' privato: attivalo solo per cercare un problema).
+
 ## Aggiornamenti automatici (facoltativi)
 
 Il repository e' privato, quindi per aggiornarsi da solo il programma ha bisogno di un token GitHub di **sola lettura**:
@@ -91,12 +103,12 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 
 ## Test
 
-`cargo test` verifica il parsing della configurazione, i prompt per app, il salvataggio della chiave in `.env`, la lettura della release di aggiornamento (URL ammessi, SHA-256, marcatore `[installer]`), il passaggio ai modelli di riserva, la scelta della regola per app (inclusi `send_enter` e `raw`) e il parsing della scorciatoia. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.
+`cargo test` verifica il parsing della configurazione, l'interruttore `debug` in `config.toml`, il formato della data nel log, i prompt per app, il salvataggio della chiave in `.env`, la lettura della release di aggiornamento (URL ammessi, SHA-256, marcatore `[installer]`), il passaggio ai modelli di riserva, la scelta della regola per app (inclusi `send_enter` e `raw`) e il parsing della scorciatoia. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.
 
 ## Spazio occupato
 
 - **Audio**: la registrazione sta solo in RAM e non viene mai scritta su disco. Il buffer e' limitato da `max_seconds` (120 s: circa 23 MB a 48 kHz durante la registrazione, qualche MB per una dettatura normale) e viene liberato appena finita l'elaborazione.
-- **Log**: `trascrittore.log` contiene solo errori (mai testo dettato ne' chiavi) e viene azzerato oltre 256 KB.
+- **Log**: `trascrittore.log` (vedi sotto) e' limitato a due file da 512 KB al massimo (`.log` e `.log.1`).
 - **File fissi**: `config.toml` e `.env` in `%APPDATA%\Trascrittore`, pochi KB. Il programma installato e' un solo `.exe` di pochi MB.
 - **Aggiornamenti**: il nuovo `.exe` viene scaricato accanto al vecchio e il file `.old` viene cancellato al riavvio successivo; l'eventuale installer scaricato in `%TEMP%\Trascrittore-Update` viene cancellato all'avvio successivo.
 - **Contatori di utilizzo**: sono in memoria (poche righe per modello) e si azzerano alla chiusura.

@@ -95,6 +95,7 @@ fn run_setup(token: &str, rel: &Release) -> Result<(), String> {
 /// Controlla subito; se c'e' una versione piu' recente la installa. Ok(false) = gia' aggiornato.
 pub fn check_and_apply(token: &str) -> Result<bool, String> {
     let rel = fetch_latest(token)?;
+    config::debug(|| format!("aggiornamenti: online {}, installato {}", release::short(&rel.commit), release::current_commit().map_or("build locale", release::short)));
     if !release::needs_update(release::current_commit(), &rel.commit) {
         return Ok(false);
     }

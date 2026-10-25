@@ -81,6 +81,7 @@ impl Groq {
     }
 
     fn send(&self, model: &str, req: RequestBuilder) -> Result<String, ApiError> {
+        let started = std::time::Instant::now();
         let resp = req.bearer_auth(&self.key).send().map_err(|e| net(e.to_string()))?;
         let status = resp.status();
         let headers: Vec<(String, String)> = resp
@@ -99,6 +100,15 @@ impl Groq {
             .and_then(|v| v["usage"]["total_tokens"].as_u64())
             .unwrap_or(0);
         usage::record(model, &headers, tokens);
+        crate::config::debug(|| {
+            format!(
+                "Groq {}: HTTP {} in {} ms, {} token",
+                if model.is_empty() { "(elenco modelli)" } else { model },
+                status.as_u16(),
+                started.elapsed().as_millis(),
+                tokens
+            )
+        });
         if status.is_success() {
             Ok(text)
         } else {

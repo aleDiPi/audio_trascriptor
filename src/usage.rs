@@ -91,6 +91,7 @@ pub fn with_fallback<T>(
     mut call: impl FnMut(&str) -> Result<T, ApiError>,
 ) -> Result<(T, String), String> {
     let mut candidates: Vec<&String> = models.iter().filter(|m| !is_limited(m)).collect();
+    crate::config::debug(|| format!("modelli candidati: {candidates:?} (in pausa per limite: {})", models.len() - candidates.len()));
     if candidates.is_empty() {
         candidates = models.iter().collect(); // tutti in pausa: riprova comunque
     }
@@ -100,6 +101,7 @@ pub fn with_fallback<T>(
             Ok(v) => return Ok((v, m.clone())),
             Err(e) if e.status == 429 => {
                 mark_limited(m, e.retry_after.unwrap_or(60));
+                crate::config::log(&format!("limite Groq raggiunto su {m}: passo al modello successivo (pausa {} s)", e.retry_after.unwrap_or(60)));
                 last = format!("{m}: {e}");
             }
             Err(e) => return Err(e.to_string()),
