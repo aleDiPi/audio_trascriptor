@@ -35,7 +35,8 @@ Se `config.toml` non e' nella cartella corrente o accanto all'exe, il programma 
 - `hotkey`: scorciatoia, es. `"ctrl+win"`, `"ctrl+alt+space"`, `"f9"`.
 - `mode`: `"hold"` (tieni premuto) o `"toggle"` (premi per iniziare/finire).
 - `language`, `stt_model`, `llm_model`, `max_seconds`, `restore_clipboard`.
-- `default_prompt`: prompt usato quando nessuna app corrisponde.
+- `default_prompt`: prompt di base sempre applicato (prompt di pulizia di [OpenWhispr](https://github.com/OpenWhispr/openwhispr), licenza MIT). Il `prompt` della regola dell'app viene aggiunto a questo.
+- `dictionary`: parole/nomi da scrivere esattamente cosi'.
 - `[[apps]]`: regole per app, con `exe` (nomi dei processi), `prompt`, `raw = true` per incollare la trascrizione senza AI, `paste = "shift+insert"` per i terminali che lo richiedono, `title_contains` per distinguere ad es. un sito nel browser.
 
 Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
@@ -46,3 +47,7 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 - Se l'AI non risponde, viene incollata la trascrizione grezza. Gli errori finiscono in `trascrittore.log` (senza testo dettato ne' chiavi).
 - La parte specifica di Windows e' isolata in `src/platform.rs` e `src/hotkey.rs`: il resto e' portabile per un eventuale porting a macOS/Linux.
 - Vedi `SECURITY.md` per la gestione dei segreti.
+
+## Crediti
+
+Il prompt di pulizia del testo deriva da [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT, © OpenWhispr Team).

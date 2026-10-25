@@ -221,11 +221,16 @@ mod app {
         let final_text = if raw {
             text
         } else {
-            let prompt = rule
-                .map(|r| r.prompt.as_str())
-                .filter(|p| !p.is_empty())
-                .unwrap_or(&cfg.default_prompt);
-            groq.refine(&cfg.llm_model, prompt, &text).unwrap_or_else(|e| {
+            let mut prompt = cfg.default_prompt.clone();
+            if let Some(extra) = rule.map(|r| r.prompt.as_str()).filter(|p| !p.is_empty()) {
+                prompt.push_str("\n\n");
+                prompt.push_str(extra);
+            }
+            if !cfg.dictionary.is_empty() {
+                prompt.push_str("\n\nDizionario personalizzato (usa queste grafie esatte): ");
+                prompt.push_str(&cfg.dictionary.join(", "));
+            }
+            groq.refine(&cfg.llm_model, &prompt, &text).unwrap_or_else(|e| {
                 config::log(&format!("AI non disponibile, incollo la trascrizione grezza: {e}"));
                 text
             })
