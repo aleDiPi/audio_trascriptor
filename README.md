@@ -80,14 +80,15 @@ Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge la 
 
 ## Impostazioni (clic sull'icona nella tray)
 
-Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) apre una finestra nativa che esiste solo finche' e' aperta. Mostra:
+Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) apre una finestra nativa che esiste solo finche' e' aperta. E' divisa in cinque sezioni, scelte dai pulsanti in alto:
 
-- la chiave API Groq: scrivila e premi **Verifica e salva**; il programma la prova su Groq e, se funziona, la salva in `.env` (si vedono solo le ultime 4 cifre);
-- i modelli in uso: trascrizione `whisper-large-v3-turbo` e AI `openai/gpt-oss-120b`; in `config.toml` si possono cambiare;
-- la versione installata e se c'e' un aggiornamento, con il campo per il token degli aggiornamenti;
-- l'utilizzo di Groq: Groq **non** espone un credito residuo (il piano gratuito ha limiti di richieste e token). La finestra mostra i limiti e i valori rimasti letti dagli header di Groq e i contatori dall'avvio, e si aggiorna da sola. I valori compaiono dopo il primo utilizzo;
-- i modelli di riserva: se Groq risponde "limite raggiunto" (HTTP 429) il programma passa in automatico al modello successivo (`fallback_models`, `stt_fallback_models`) e salta quello in pausa finche' il limite non si resetta;
-- i prompt completi inviati all'AI per ogni caso (app non riconosciuta e ogni regola `[[apps]]`).
+1. **API**: la chiave Groq (**Verifica e salva**: la prova su Groq e, se funziona, la salva in `.env`; si vedono solo le ultime 4 cifre; **Crea chiave Groq** apre la pagina), i modelli in uso, l'utilizzo di Groq e i modelli di riserva. Groq **non** espone un credito residuo (il piano gratuito ha limiti di richieste e token): la finestra mostra i limiti e i valori rimasti letti dagli header e i contatori dall'avvio. Se Groq risponde "limite raggiunto" (HTTP 429) il programma passa al modello successivo (`fallback_models`, `stt_fallback_models`) e salta quello in pausa. Altri servizi di riserva non sono ancora supportati.
+2. **GitHub**: il token degli aggiornamenti (inserimento, **Verifica e salva**, **Rimuovi token**, **Crea token GitHub**).
+3. **Impostazioni**: aggiornamenti automatici, modalita' debug, testo dettato nel log (`debug_log_text`), apertura di log e cartella di configurazione.
+4. **Prompt**: i prompt completi inviati all'AI, scelti da un elenco per tipo di applicazione (app non riconosciuta e ogni regola `[[apps]]`, con il nome dato da `name`).
+5. **Info**: versione e stato degli aggiornamenti, percorsi, scorciatoia, modelli e descrizione del programma.
+
+I testi sono selezionabili e copiabili.
 
 ## Configurazione (`config.toml`)
 

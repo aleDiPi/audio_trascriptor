@@ -11,7 +11,7 @@ const DEFAULT_ENV: &str = include_str!("../.env.example");
 
 static DIR: OnceLock<PathBuf> = OnceLock::new();
 static DEBUG: AtomicBool = AtomicBool::new(false);
-static DEBUG_TEXT: AtomicBool = AtomicBool::new(false);
+static TEXT_FLAG: AtomicBool = AtomicBool::new(false);
 static AUTO_UPDATE: AtomicBool = AtomicBool::new(true);
 
 /// Regole fisse aggiunte a ogni prompt di rifinitura.
@@ -45,12 +45,26 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct AppRule {
+    /// Nome della categoria mostrato nelle Impostazioni (es. "Email")
+    pub name: String,
     pub exe: Vec<String>,
     pub title_contains: String,
     pub prompt: String,
     pub raw: bool,
     pub paste: String,
     pub send_enter: bool,
+}
+
+impl AppRule {
+    /// "Email (outlook.exe, olk.exe)" oppure solo i nomi dei programmi se manca `name`.
+    pub fn label(&self) -> String {
+        let exes = self.exe.join(", ");
+        let mut l = if self.name.trim().is_empty() { exes } else { format!("{} ({exes})", self.name.trim()) };
+        if !self.title_contains.is_empty() {
+            l.push_str(&format!(" - titolo contiene \"{}\"", self.title_contains));
+        }
+        l
+    }
 }
 
 impl Default for Config {
@@ -106,32 +120,35 @@ impl Config {
         p
     }
 
-    /// Testo per la finestra impostazioni: modelli e prompt di ogni caso.
+    /// Casi mostrati nella sezione Prompt: (titolo, testo) per l'app non riconosciuta e per ogni regola.
+    pub fn prompt_cases(&self) -> Vec<(String, String)> {
+        let mut v = vec![("App non riconosciuta (predefinito)".to_string(), self.system_prompt(None))];
+        for r in &self.apps {
+            let mut text = if r.raw {
+                "Nessuna AI: la trascrizione viene incollata cosi' com'e'.".to_string()
+            } else {
+                self.system_prompt(Some(r))
+            };
+            if r.send_enter {
+                text.push_str("\n[Dopo l'incolla viene premuto Invio]");
+            }
+            v.push((r.label(), text));
+        }
+        v
+    }
+
+    /// Testo con modelli e prompt di ogni caso.
     pub fn prompt_report(&self) -> String {
         let mut s = format!(
-            "MODELLI\nTrascrizione: {}\nAI (rifinitura): {}\n\n",
+            "MODELLI\nTrascrizione: {}\nAI (rifinitura): {}",
             self.stt_model, self.llm_model
         );
-        s.push_str("=== App non riconosciuta (predefinito) ===\n");
-        s.push_str(&self.system_prompt(None));
-        for r in &self.apps {
-            s.push_str("\n\n=== ");
-            s.push_str(&r.exe.join(", "));
-            if !r.title_contains.is_empty() {
-                s.push_str(&format!(" (titolo contiene \"{}\")", r.title_contains));
-            }
-            s.push_str(" ===\n");
-            if r.raw {
-                s.push_str("Nessuna AI: la trascrizione viene incollata cosi' com'e'.");
-            } else {
-                s.push_str(&self.system_prompt(Some(r)));
-            }
-            if r.send_enter {
-                s.push_str("\n[Dopo l'incolla viene premuto Invio]");
-            }
+        for (title, text) in self.prompt_cases() {
+            s.push_str(&format!("\n\n=== {title} ===\n{text}"));
         }
         s
     }
+
 
     /// Regola da applicare all'app in primo piano (None = prompt predefinito).
     pub fn rule_for(&self, exe: &str, title: &str) -> Option<&AppRule> {
@@ -179,7 +196,7 @@ pub fn dir() -> &'static Path {
 pub fn load() -> Config {
     let c = load_raw();
     DEBUG.store(c.debug, Ordering::Relaxed);
-    DEBUG_TEXT.store(c.debug && c.debug_log_text, Ordering::Relaxed);
+    TEXT_FLAG.store(c.debug_log_text, Ordering::Relaxed);
     AUTO_UPDATE.store(c.auto_update, Ordering::Relaxed);
     c
 }
@@ -306,6 +323,21 @@ pub fn clear_update_token() -> std::io::Result<()> {
     save_update_token("")
 }
 
+/// Il testo dettato va nel log solo con debug attivo E `debug_log_text = true`.
+pub fn debug_text_enabled() -> bool {
+    debug_enabled() && TEXT_FLAG.load(Ordering::Relaxed)
+}
+
+/// Attiva/disattiva la scrittura del testo dettato nel log e la salva in config.toml (`debug_log_text = ...`).
+pub fn set_debug_log_text(on: bool) {
+    TEXT_FLAG.store(on, Ordering::Relaxed);
+    let path = dir().join("config.toml");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let _ = std::fs::write(&path, set_toml_bool(&text, "debug_log_text", on));
+    }
+    log(&format!("testo dettato nel log {}", if on { "attivato" } else { "disattivato" }));
+}
+
 pub fn debug_enabled() -> bool {
     DEBUG.load(Ordering::Relaxed)
 }
@@ -378,7 +410,7 @@ pub fn debug_text_long(label: &str, text: &str) {
 }
 
 fn debug_text_max(label: &str, text: &str, max: usize) {
-    if DEBUG_TEXT.load(Ordering::Relaxed) {
+    if debug_text_enabled() {
         write_log("txt", &format!("{label}: {}", clip_text(text, max)));
     }
 }
@@ -723,5 +755,41 @@ mod tests {
         assert_eq!(clip_text("a\nb", 10), "a\n    b");
         assert_eq!(clip_text("abcdef", 3), "abc [...troncato]");
         assert_eq!(clip_text("x\r\ny", 10), "x\n    y");
+    }
+
+    #[test]
+    fn prompt_cases_cover_every_app_type_with_names() {
+        let c = example();
+        let cases = c.prompt_cases();
+        assert_eq!(cases.len(), c.apps.len() + 1);
+        assert!(cases[0].0.contains("non riconosciuta") && cases[0].1.contains("Regole fisse"));
+        let titles: Vec<&str> = cases.iter().map(|(t, _)| t.as_str()).collect();
+        for needle in ["Email", "Chat", "Editor di codice", "Terminale", "Documenti", "Claude"] {
+            assert!(titles.iter().any(|t| t.starts_with(needle)), "manca la categoria {needle}: {titles:?}");
+        }
+        let terminal = cases.iter().find(|(t, _)| t.starts_with("Terminale")).unwrap();
+        assert!(terminal.1.contains("Nessuna AI"));
+        let claude = cases.iter().find(|(t, _)| t.starts_with("Claude")).unwrap();
+        assert!(claude.1.contains("premuto Invio"));
+    }
+
+    #[test]
+    fn rule_label_uses_name_exes_and_title() {
+        let r = AppRule { name: "Email".into(), exe: vec!["outlook.exe".into()], title_contains: "Posta".into(), ..Default::default() };
+        assert_eq!(r.label(), "Email (outlook.exe) - titolo contiene \"Posta\"");
+        let r = AppRule { exe: vec!["a.exe".into(), "b.exe".into()], ..Default::default() };
+        assert_eq!(r.label(), "a.exe, b.exe");
+    }
+
+    #[test]
+    fn text_in_log_needs_debug_and_flag() {
+        DEBUG.store(true, Ordering::Relaxed);
+        TEXT_FLAG.store(true, Ordering::Relaxed);
+        assert!(debug_text_enabled());
+        DEBUG.store(false, Ordering::Relaxed);
+        assert!(!debug_text_enabled());
+        DEBUG.store(true, Ordering::Relaxed);
+        TEXT_FLAG.store(false, Ordering::Relaxed);
+        assert!(!debug_text_enabled());
     }
 }

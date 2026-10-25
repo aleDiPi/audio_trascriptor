@@ -25,6 +25,11 @@ const ID_GROQ_LINK: i32 = 113;
 const ID_GITHUB_LINK: i32 = 114;
 const ID_AUTOUPD: i32 = 115;
 const ID_TOKEN_CLEAR: i32 = 116;
+const ID_VERINFO: i32 = 117;
+const ID_DEBUG_TEXT: i32 = 118;
+const ID_PROMPT_SEL: i32 = 119;
+const ID_TAB0: i32 = 200; // 200..=204: pulsanti delle sezioni
+const TABS: [&str; 5] = ["API", "GitHub", "Impostazioni", "Prompt", "Info"];
 
 const GROQ_KEYS_URL: &str = "https://console.groq.com/keys";
 const GITHUB_TOKEN_URL: &str = "https://github.com/settings/personal-access-tokens/new";
@@ -36,6 +41,10 @@ const WM_UPDATE_INFO: u32 = WM_APP + 3;
 static RESULT: Mutex<Option<String>> = Mutex::new(None);
 static TOKEN_RESULT: Mutex<Option<String>> = Mutex::new(None);
 static UPDATE_INFO: Mutex<Option<String>> = Mutex::new(None);
+/// Controlli di ogni sezione: (finestra, indice sezione). Si mostra solo quella scelta.
+static PAGES: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
+/// Titoli e testi dei prompt della sezione Prompt (stessi indici della lista a discesa).
+static CASES: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 
 fn w(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -65,7 +74,7 @@ pub fn show() {
             lpszClassName: class.as_ptr(),
         };
         RegisterClassW(&wc); // 0 se gia' registrata: va bene
-        let (ww, wh) = (656, 816);
+        let (ww, wh) = (656, 600);
         let x = (GetSystemMetrics(SM_CXSCREEN) - ww) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - wh) / 2;
         let title = w("Trascrittore audio - Impostazioni");
@@ -89,7 +98,7 @@ pub fn show() {
     }
 }
 
-unsafe fn child(parent: HWND, class: &str, text: &str, style: u32, rect: (i32, i32, i32, i32), id: i32) -> HWND {
+unsafe fn child(parent: HWND, page: usize, class: &str, text: &str, style: u32, rect: (i32, i32, i32, i32), id: i32) -> HWND {
     let (c, t) = (w(class), w(text));
     let h = CreateWindowExW(
         if class == "EDIT" { WS_EX_CLIENTEDGE } else { 0 },
@@ -106,11 +115,12 @@ unsafe fn child(parent: HWND, class: &str, text: &str, style: u32, rect: (i32, i
         null(),
     );
     SendMessageW(h, WM_SETFONT, GetStockObject(DEFAULT_GUI_FONT) as usize, 1);
+    PAGES.lock().unwrap().push((h as usize, page));
     h
 }
 
 /// Testo informativo selezionabile e copiabile: casella di sola lettura senza bordo.
-unsafe fn info(parent: HWND, text: &str, rect: (i32, i32, i32, i32), id: i32) -> HWND {
+unsafe fn info(parent: HWND, page: usize, text: &str, rect: (i32, i32, i32, i32), id: i32) -> HWND {
     let (c, t) = (w("EDIT"), w(text));
     let h = CreateWindowExW(
         0,
@@ -127,6 +137,7 @@ unsafe fn info(parent: HWND, text: &str, rect: (i32, i32, i32, i32), id: i32) ->
         null(),
     );
     SendMessageW(h, WM_SETFONT, GetStockObject(DEFAULT_GUI_FONT) as usize, 1);
+    PAGES.lock().unwrap().push((h as usize, page));
     h
 }
 
@@ -134,60 +145,155 @@ fn open_url(url: &str) {
     let _ = std::process::Command::new("explorer").arg(url).spawn();
 }
 
+/// Mostra i controlli della sezione scelta e nasconde gli altri.
+unsafe fn show_page(hwnd: HWND, page: usize) {
+    for (h, p) in PAGES.lock().unwrap().iter() {
+        if *p == usize::MAX {
+            continue; // i pulsanti delle sezioni restano sempre visibili
+        }
+        ShowWindow(*h as HWND, if *p == page { SW_SHOW } else { SW_HIDE });
+    }
+    for i in 0..TABS.len() {
+        SendMessageW(GetDlgItem(hwnd, ID_TAB0 + i as i32), BM_SETCHECK, (i == page) as usize, 0);
+    }
+}
+
+unsafe fn select_prompt(hwnd: HWND) {
+    let i = SendMessageW(GetDlgItem(hwnd, ID_PROMPT_SEL), CB_GETCURSEL, 0, 0);
+    let text = CASES.lock().unwrap().get(i.max(0) as usize).map(|(_, t)| t.replace("\r\n", "\n").replace('\n', "\r\n"));
+    if let Some(t) = text {
+        set_text(GetDlgItem(hwnd, ID_PROMPTS), &t);
+    }
+}
+
 unsafe fn build(hwnd: HWND) {
     let cfg = config::load();
-    child(hwnd, "STATIC", "Chiave API Groq:", 0, (16, 16, 300, 18), 0);
-    child(hwnd, "BUTTON", "Crea chiave Groq", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 10, 128, 24), ID_GROQ_LINK);
-    child(hwnd, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 38, 470, 24), ID_KEY);
-    child(hwnd, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 36, 128, 28), ID_SAVE);
+    PAGES.lock().unwrap().clear();
+    // pulsanti delle sezioni
+    for (i, name) in TABS.iter().enumerate() {
+        let style = (BS_AUTORADIOBUTTON | BS_PUSHLIKE) as u32 | WS_TABSTOP | if i == 0 { WS_GROUP } else { 0 };
+        let b = child(hwnd, usize::MAX, "BUTTON", name, style, (16 + i as i32 * 122, 8, 118, 30), ID_TAB0 + i as i32);
+        let _ = b;
+    }
+
+    // --- 0: API
+    let p = 0;
+    child(hwnd, p, "STATIC", "Groq (trascrizione e correzione del testo) - chiave API:", 0, (16, 52, 470, 18), 0);
+    child(hwnd, p, "BUTTON", "Crea chiave Groq", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 48, 128, 24), ID_GROQ_LINK);
+    child(hwnd, p, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 76, 470, 24), ID_KEY);
+    child(hwnd, p, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 74, 128, 28), ID_SAVE);
     let status = match config::groq_key() {
         Some(k) => format!("Chiave salvata: {}. Per cambiarla scrivi quella nuova e premi il pulsante.", config::mask_key(&k)),
         None => format!("Nessuna chiave configurata. Incolla la chiave ({GROQ_KEYS_URL}) e premi il pulsante."),
     };
-    info(hwnd, &status, (16, 72, 608, 50), ID_STATUS);
-    let models = format!(
-        "Modelli in uso:  trascrizione {}  |  AI {}",
-        cfg.stt_model, cfg.llm_model
-    );
-    info(hwnd, &models, (16, 124, 608, 34), 0);
-    child(hwnd, "STATIC", "Token GitHub per gli aggiornamenti (incolla qui per inserirlo o cambiarlo):", 0, (16, 168, 470, 18), 0);
-    child(hwnd, "BUTTON", "Crea token GitHub", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 162, 128, 24), ID_GITHUB_LINK);
-    child(hwnd, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 190, 470, 24), ID_TOKEN);
-    child(hwnd, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 188, 128, 28), ID_TOKEN_SAVE);
-    let auto = child(hwnd, "BUTTON", "Aggiornamenti automatici attivi", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 224, 470, 22), ID_AUTOUPD);
-    SendMessageW(auto, BM_SETCHECK, config::auto_update_enabled() as usize, 0);
-    child(hwnd, "BUTTON", "Rimuovi token", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 221, 128, 28), ID_TOKEN_CLEAR);
-    info(hwnd, &update_status_initial(), (16, 252, 608, 80), ID_UPDATE);
-    child(hwnd, "STATIC", "Utilizzo Groq (si aggiorna da solo):", 0, (16, 338, 400, 18), 0);
+    info(hwnd, p, &status, (16, 108, 608, 50), ID_STATUS);
+    let models = format!("Modelli in uso:  trascrizione {}  |  AI {}", cfg.stt_model, cfg.llm_model);
+    info(hwnd, p, &models, (16, 160, 608, 34), 0);
+    child(hwnd, p, "STATIC", "Utilizzo Groq (si aggiorna da solo):", 0, (16, 200, 400, 18), 0);
     child(
         hwnd,
+        p,
         "EDIT",
         &usage_text(),
         (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | WS_VSCROLL,
-        (16, 360, 608, 90),
+        (16, 222, 608, 120),
         ID_USAGE,
     );
     let fb = format!(
-        "Se il limite gratuito si esaurisce passo in automatico a: AI {} | trascrizione {}. Si cambiano in config.toml.",
+        "Se il limite gratuito si esaurisce passo in automatico a: AI {} | trascrizione {} (si cambiano in config.toml).",
         cfg.fallback_models.join(", "),
         cfg.stt_fallback_models.join(", ")
     );
-    info(hwnd, &fb, (16, 458, 470, 34), 0);
-    child(hwnd, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 456, 128, 28), ID_FOLDER);
-    let dbg = child(hwnd, "BUTTON", "Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 500, 470, 22), ID_DEBUG);
+    info(hwnd, p, &fb, (16, 350, 608, 34), 0);
+    info(
+        hwnd,
+        p,
+        "Altri servizi di riserva (per esempio OpenAI): non ancora supportati. Dimmi quali ti servono e li aggiungo con la loro chiave in questa sezione.",
+        (16, 392, 608, 50),
+        0,
+    );
+
+    // --- 1: GitHub
+    let p = 1;
+    child(hwnd, p, "STATIC", "Token GitHub per gli aggiornamenti (incolla qui per inserirlo o cambiarlo):", 0, (16, 52, 470, 18), 0);
+    child(hwnd, p, "BUTTON", "Crea token GitHub", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 48, 128, 24), ID_GITHUB_LINK);
+    child(hwnd, p, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 76, 470, 24), ID_TOKEN);
+    child(hwnd, p, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 74, 128, 28), ID_TOKEN_SAVE);
+    child(hwnd, p, "BUTTON", "Rimuovi token", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 108, 128, 28), ID_TOKEN_CLEAR);
+    info(hwnd, p, &token_status(), (16, 108, 470, 120), ID_UPDATE);
+    info(
+        hwnd,
+        p,
+        "Come crearlo: il pulsante \"Crea token GitHub\" apre la pagina. Scegli Resource owner aleDiPi, Repository access solo audio_trascriptor e Permissions > Contents = Read-only. Copia il token (inizia con github_pat_) e incollalo qui.\r\nL'attivazione degli aggiornamenti automatici e' nella sezione Impostazioni.",
+        (16, 240, 608, 100),
+        0,
+    );
+
+    // --- 2: Impostazioni
+    let p = 2;
+    let auto = child(hwnd, p, "BUTTON", "Aggiornamenti automatici attivi (serve il token GitHub)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 56, 600, 22), ID_AUTOUPD);
+    SendMessageW(auto, BM_SETCHECK, config::auto_update_enabled() as usize, 0);
+    let dbg = child(hwnd, p, "BUTTON", "Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 92, 600, 22), ID_DEBUG);
     SendMessageW(dbg, BM_SETCHECK, config::debug_enabled() as usize, 0);
-    child(hwnd, "BUTTON", "Apri log", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 497, 128, 28), ID_OPENLOG);
-    info(hwnd, &format!("Log: {}", config::log_path().display()), (16, 528, 608, 18), 0);
-    child(hwnd, "STATIC", "Prompt inviati all'AI, per ogni caso:", 0, (16, 552, 400, 18), 0);
-    let report = cfg.prompt_report().replace("\r\n", "\n").replace('\n', "\r\n");
+    let dtx = child(
+        hwnd,
+        p,
+        "BUTTON",
+        "Nel log anche il testo dettato, il prompt e la risposta dell'AI (privato: solo per cercare un problema)",
+        BS_AUTOCHECKBOX as u32 | WS_TABSTOP,
+        (36, 118, 580, 22),
+        ID_DEBUG_TEXT,
+    );
+    SendMessageW(dtx, BM_SETCHECK, cfg.debug_log_text as usize, 0);
+    child(hwnd, p, "BUTTON", "Apri log", BS_PUSHBUTTON as u32 | WS_TABSTOP, (16, 154, 128, 28), ID_OPENLOG);
+    child(hwnd, p, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (156, 154, 150, 28), ID_FOLDER);
+    info(hwnd, p, &format!("Log: {}", config::log_path().display()), (16, 192, 608, 34), 0);
+    info(
+        hwnd,
+        p,
+        "Spegnendo la modalita' debug i file di log vengono cancellati. Scorciatoia, lingua, modelli e prompt si cambiano in config.toml (\"Apri cartella config\"), poi \"Ricarica configurazione\" dal menu dell'icona.",
+        (16, 234, 608, 70),
+        0,
+    );
+
+    // --- 3: Prompt
+    let p = 3;
+    child(hwnd, p, "STATIC", "Prompt inviati all'AI, per tipo di applicazione:", 0, (16, 52, 470, 18), 0);
+    let combo = child(hwnd, p, "COMBOBOX", "", (CBS_DROPDOWNLIST | CBS_HASSTRINGS) as u32 | WS_VSCROLL | WS_TABSTOP, (16, 76, 608, 260), ID_PROMPT_SEL);
+    let cases = cfg.prompt_cases();
+    for (title, _) in &cases {
+        SendMessageW(combo, CB_ADDSTRING, 0, w(title).as_ptr() as LPARAM);
+    }
+    SendMessageW(combo, CB_SETCURSEL, 0, 0);
+    let first = cases.first().map(|(_, t)| t.replace("\r\n", "\n").replace('\n', "\r\n")).unwrap_or_default();
+    *CASES.lock().unwrap() = cases;
     child(
         hwnd,
+        p,
         "EDIT",
-        &report,
+        &first,
         (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | WS_VSCROLL | WS_TABSTOP,
-        (16, 574, 608, 170),
+        (16, 108, 608, 392),
         ID_PROMPTS,
     );
+
+    // --- 4: Info
+    let p = 4;
+    info(hwnd, p, &update_info_initial(), (16, 56, 608, 110), ID_VERINFO);
+    let exe = std::env::current_exe().map(|e| e.display().to_string()).unwrap_or_default();
+    let general = format!(
+        "Programma: {exe}\r\nConfigurazione e chiavi: {}\r\nLog: {}\r\n\r\nScorciatoia: {} ({}), lingua {}\r\nModelli: trascrizione {}, AI {}\r\n\r\nTrascrittore audio registra dal microfono predefinito di Windows mentre tieni premuta la scorciatoia, trascrive e corregge il testo con Groq e lo incolla dove hai il cursore. Sta nella tray e usa poche risorse.",
+        config::dir().display(),
+        config::log_path().display(),
+        cfg.hotkey,
+        if cfg.is_toggle() { "premi per iniziare e fermare" } else { "tieni premuto" },
+        cfg.language,
+        cfg.stt_model,
+        cfg.llm_model
+    );
+    info(hwnd, p, &general, (16, 176, 608, 250), 0);
+
+    show_page(hwnd, 0);
     SetTimer(hwnd, TIMER_USAGE, 3000, None);
     check_update_in_background(hwnd);
 }
@@ -198,18 +304,22 @@ fn version_line() -> String {
     format!("Versione installata: {} ({build})", env!("CARGO_PKG_VERSION"))
 }
 
-fn update_status_initial() -> String {
-    if let Some(t) = config::update_token() {
-        if !config::auto_update_enabled() {
-            return format!("{}\r\nToken salvato: {}. Aggiornamenti automatici DISATTIVATI: spunta la casella per riattivarli.", version_line(), config::mask_key(&t));
-        }
-        format!("{}\r\nToken salvato: {}. Aggiornamenti automatici attivi. Controllo in corso...", version_line(), config::mask_key(&t))
-    } else {
-        format!(
-            "{}\r\nNessun token salvato: aggiornamenti automatici non disponibili. Incolla un token qui sopra (\"Crea token GitHub\" apre la pagina), oppure scarica a mano il nuovo installer dalla pagina Release.",
-            version_line()
-        )
+/// Stato del token GitHub (sezione GitHub).
+fn token_status() -> String {
+    match config::update_token() {
+        Some(t) => format!("Token salvato: {}. Per cambiarlo incolla quello nuovo e premi \"Verifica e salva\".", config::mask_key(&t)),
+        None => "Nessun token salvato: gli aggiornamenti automatici non sono disponibili. Incolla un token qui sopra (\"Crea token GitHub\" apre la pagina), oppure aggiorna a mano scaricando il nuovo installer dalla pagina Release.".to_string(),
     }
+}
+
+/// Versione e stato degli aggiornamenti (sezione Info).
+fn update_info_initial() -> String {
+    let state = match (config::update_token().is_some(), config::auto_update_enabled()) {
+        (false, _) => "Aggiornamenti automatici: non disponibili (nessun token GitHub). Per aggiornare scarica a mano il nuovo installer dalla pagina Release.",
+        (true, false) => "Aggiornamenti automatici: DISATTIVATI (si attivano nella sezione Impostazioni).",
+        (true, true) => "Aggiornamenti automatici: attivi. Controllo in corso...",
+    };
+    format!("{}\r\n{state}", version_line())
 }
 
 /// Se c'e' un token, chiede a GitHub se esiste una versione piu' recente (senza installarla).
@@ -365,16 +475,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 ID_AUTOUPD => {
                     let on = SendMessageW(GetDlgItem(hwnd, ID_AUTOUPD), BM_GETCHECK, 0, 0) == 1;
                     config::set_auto_update(on);
-                    set_text(GetDlgItem(hwnd, ID_UPDATE), &update_status_initial());
+                    set_text(GetDlgItem(hwnd, ID_VERINFO), &update_info_initial());
                     check_update_in_background(hwnd);
                 }
                 ID_TOKEN_CLEAR => {
                     let msg = match config::clear_update_token() {
-                        Ok(()) => update_status_initial(),
+                        Ok(()) => token_status(),
                         Err(e) => format!("Impossibile rimuovere il token: {e}"),
                     };
                     set_text(GetDlgItem(hwnd, ID_UPDATE), &msg);
+                    set_text(GetDlgItem(hwnd, ID_VERINFO), &update_info_initial());
                 }
+                ID_DEBUG_TEXT => {
+                    let on = SendMessageW(GetDlgItem(hwnd, ID_DEBUG_TEXT), BM_GETCHECK, 0, 0) == 1;
+                    config::set_debug_log_text(on);
+                }
+                ID_PROMPT_SEL if (wp >> 16) as u32 == CBN_SELCHANGE => select_prompt(hwnd),
+                id if (ID_TAB0..ID_TAB0 + TABS.len() as i32).contains(&id) => show_page(hwnd, (id - ID_TAB0) as usize),
                 ID_GITHUB_LINK => open_url(GITHUB_TOKEN_URL),
                 ID_DEBUG => {
                     let on = SendMessageW(GetDlgItem(hwnd, ID_DEBUG), BM_GETCHECK, 0, 0) == 1;
@@ -422,7 +539,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         }
         WM_UPDATE_INFO => {
             if let Some(text) = UPDATE_INFO.lock().unwrap().take() {
-                set_text(GetDlgItem(hwnd, ID_UPDATE), &text);
+                set_text(GetDlgItem(hwnd, ID_VERINFO), &text);
             }
             0
         }
