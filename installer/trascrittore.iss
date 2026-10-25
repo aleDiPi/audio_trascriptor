@@ -86,6 +86,9 @@ Filename: "{app}\trascrittore.exe"; Description: "Avvia Trascrittore audio"; Fla
 [Code]
 var
   TokenPage: TInputQueryWizardPage;
+  { 0 = non ancora controllato, 1 = nessun token salvato, 2 = token salvato gia'' valido (o non verificabile: si tiene),
+    3 = token salvato rifiutato da GitHub }
+  SavedState: Integer;
 
 procedure OpenTokenPage(Sender: TObject);
 var
@@ -188,6 +191,71 @@ begin
     exit;
   end;
   Result := 'GitHub ha risposto con errore HTTP ' + IntToStr(Release) + '.';
+end;
+
+{ Token gia'' scritto in un file .env (cartella dati per tutto il PC, poi la vecchia per-utente); '' = nessuno }
+function ReadTokenFrom(EnvPath: String): String;
+var
+  Lines: TArrayOfString;
+  I: Integer;
+  Line: String;
+begin
+  Result := '';
+  if not LoadStringsFromFile(EnvPath, Lines) then exit;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Line := Trim(Lines[I]);
+    if Pos('TRASCRITTORE_UPDATE_TOKEN=', Line) = 1 then
+      Result := Trim(Copy(Line, Length('TRASCRITTORE_UPDATE_TOKEN=') + 1, Length(Line)));
+  end;
+end;
+
+function FindSavedToken: String;
+begin
+  Result := ReadTokenFrom(ExpandConstant('{commonappdata}\Trascrittore\.env'));
+  if Result = '' then
+    Result := ReadTokenFrom(ExpandConstant('{userappdata}\Trascrittore\.env'));
+end;
+
+{ La pagina del token si salta se ce n''e'' gia'' uno e GitHub non lo rifiuta: va tenuto cosi'' com''e'' }
+function SavedTokenState: Integer;
+var
+  Token, Reason: String;
+begin
+  if SavedState <> 0 then
+  begin
+    Result := SavedState;
+    exit;
+  end;
+  Token := FindSavedToken;
+  if Token = '' then
+    SavedState := 1
+  else
+  begin
+    Reason := CheckToken(Token);
+    if (Pos('GitHub non accetta il token', Reason) = 1) or (Pos('Il token non vede il repository', Reason) = 1) then
+      SavedState := 3
+    else
+      SavedState := 2; { valido, oppure rete assente o errore del server: nel dubbio non lo tocco }
+  end;
+  Result := SavedState;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if PageID <> TokenPage.ID then exit;
+  if SavedTokenState = 2 then
+    Result := True
+  else if SavedTokenState = 3 then
+    TokenPage.SubCaption := 'Il token salvato non e'' piu'' accettato da GitHub: incollane uno nuovo (o lascia vuoto per tenerlo cosi'' com''e'').';
+end;
+
+function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+begin
+  Result := MemoDirInfo;
+  if SavedTokenState = 2 then
+    Result := Result + NewLine + NewLine + 'Aggiornamenti automatici:' + NewLine + Space + 'token GitHub gia'' presente: viene mantenuto';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;

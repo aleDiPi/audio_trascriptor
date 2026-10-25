@@ -820,6 +820,25 @@ mod tests {
     }
 
     #[test]
+    fn installer_keeps_an_existing_token_and_skips_its_page() {
+        let iss = installer_script();
+        for needle in [
+            "function FindSavedToken",
+            "{commonappdata}\\Trascrittore\\.env",
+            "{userappdata}\\Trascrittore\\.env",
+            "function ShouldSkipPage",
+            "SavedTokenState = 2",
+            "token GitHub gia'' presente: viene mantenuto",
+            "non e'' piu'' accettato da GitHub",
+        ] {
+            assert!(iss.contains(needle), "manca '{needle}' nel controllo del token gia' salvato");
+        }
+        // il file .env non si sovrascrive mai e il token si scrive solo se l'utente ne ha digitato uno
+        assert!(iss.contains("DestName: \".env\"; Flags: onlyifdoesntexist"));
+        assert!(iss.contains("(Trim(TokenPage.Values[0]) <> '')"));
+    }
+
+    #[test]
     fn refine_request_has_system_and_wrapped_user_message() {
         let c = example();
         let rule = c.rule_for("claude.exe", "");
