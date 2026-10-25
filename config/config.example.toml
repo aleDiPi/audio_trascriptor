@@ -1,0 +1,59 @@
+# Trascrittore - configurazione (copia di esempio).
+# Al primo avvio il programma crea config.toml con questi valori.
+# La chiave API NON va qui: mettila nel file .env (vedi .env.example).
+
+# Scorciatoia globale. Modificatori: ctrl, alt, shift, win. Tasto opzionale: a-z, 0-9, f1-f24, space, tab, enter, esc.
+# Esempi: "ctrl+win", "ctrl+alt+space", "f9"
+hotkey = "ctrl+win"
+
+# "hold"   = tieni premuto per registrare, rilascia per trascrivere
+# "toggle" = premi una volta per iniziare, ancora una per finire
+mode = "hold"
+
+# Lingua dell'audio (codice ISO-639-1). Stringa vuota = rilevamento automatico.
+language = "it"
+
+stt_model = "whisper-large-v3-turbo"
+llm_model = "llama-3.3-70b-versatile"
+
+# Durata massima di una registrazione, in secondi
+max_seconds = 120
+
+# Ripristina il testo che avevi negli appunti dopo l'incolla
+restore_clipboard = true
+
+# Prompt usato quando nessuna app corrisponde alle regole [[apps]] qui sotto
+default_prompt = """Sei un assistente di dettatura. Ricevi la trascrizione grezza di un parlato. \
+Correggi punteggiatura, maiuscole ed errori evidenti, togli esitazioni e ripetizioni ("ehm", "cioè", ...), \
+mantieni lingua, significato e tono originali."""
+
+# Regole per applicazione. Se piu' regole corrispondono vince la prima.
+#   exe            = nomi del processo in primo piano (senza distinzione maiuscole/minuscole)
+#   title_contains = (opzionale) testo che deve comparire nel titolo della finestra
+#   prompt         = istruzioni per l'AI
+#   raw            = true: incolla la trascrizione senza passare dall'AI
+#   paste          = "ctrl+v" (default) oppure "shift+insert" (per alcuni terminali)
+
+[[apps]]
+exe = ["outlook.exe", "olk.exe", "thunderbird.exe"]
+prompt = """Trasforma il parlato in un'email chiara e cortese, con tono professionale. \
+Non inventare saluti o firme che non sono stati detti."""
+
+[[apps]]
+exe = ["slack.exe", "teams.exe", "ms-teams.exe", "discord.exe", "telegram.exe", "whatsapp.exe"]
+prompt = """Trasforma il parlato in un messaggio di chat breve e naturale, tono informale ma corretto. \
+Niente saluti o chiusure aggiunti."""
+
+[[apps]]
+exe = ["code.exe", "devenv.exe", "idea64.exe", "pycharm64.exe", "cursor.exe"]
+prompt = """Il testo e' destinato a un editor di codice: commento, messaggio di commit o istruzione tecnica. \
+Sii conciso e preciso, mantieni i termini tecnici in inglese, non usare Markdown."""
+
+[[apps]]
+exe = ["windowsterminal.exe", "cmd.exe", "powershell.exe", "pwsh.exe"]
+raw = true
+
+[[apps]]
+exe = ["winword.exe", "notepad.exe", "obsidian.exe", "onenote.exe"]
+prompt = """Trasforma il parlato in prosa ben scritta, con paragrafi e punteggiatura corretti. \
+Mantieni il contenuto e lo stile dell'autore."""
