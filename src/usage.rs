@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
 pub struct ApiError {
+    /// Nome del servizio ("Groq", "OpenAI", "Anthropic")
+    pub provider: &'static str,
     /// 0 = errore di rete
     pub status: u16,
     pub retry_after: Option<u64>,
@@ -20,7 +22,7 @@ impl fmt::Display for ApiError {
         if self.status == 0 {
             write!(f, "rete: {}", self.msg)
         } else {
-            write!(f, "Groq HTTP {}: {}", self.status, self.msg)
+            write!(f, "{} HTTP {}: {}", self.provider, self.status, self.msg)
         }
     }
 }
@@ -86,11 +88,13 @@ pub fn parse_retry_after(headers: &[(String, String)]) -> Option<u64> {
 }
 
 /// Token totali dichiarati nel corpo della risposta (`usage.total_tokens`), 0 se assenti.
+/// Anthropic non ha `total_tokens`: si sommano `input_tokens` e `output_tokens`.
 pub fn total_tokens(body: &str) -> u64 {
-    serde_json::from_str::<serde_json::Value>(body)
-        .ok()
-        .and_then(|v| v["usage"]["total_tokens"].as_u64())
-        .unwrap_or(0)
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else { return 0 };
+    let u = &v["usage"];
+    u["total_tokens"]
+        .as_u64()
+        .unwrap_or_else(|| u["input_tokens"].as_u64().unwrap_or(0) + u["output_tokens"].as_u64().unwrap_or(0))
 }
 
 pub fn mark_limited(model: &str, secs: u64) {
@@ -103,11 +107,12 @@ pub fn is_limited(model: &str) -> bool {
 
 /// Prova i modelli in ordine, saltando quelli in pausa per limite. Su 429 segna il modello come
 /// limitato e passa al successivo; qualsiasi altro errore si ferma subito.
-/// Restituisce il risultato e il modello che ha risposto.
+/// Restituisce il risultato e il modello che ha risposto. Se tutti i modelli sono al limite
+/// l'errore e' un 429, cosi' chi sta sopra puo' passare a un altro servizio.
 pub fn with_fallback<T>(
     models: &[String],
     mut call: impl FnMut(&str) -> Result<T, ApiError>,
-) -> Result<(T, String), String> {
+) -> Result<(T, String), ApiError> {
     let mut candidates: Vec<&String> = models.iter().filter(|m| !is_limited(m)).collect();
     crate::config::debug(|| format!("modelli candidati: {candidates:?} (in pausa per limite: {})", models.len() - candidates.len()));
     if candidates.is_empty() {
@@ -122,10 +127,15 @@ pub fn with_fallback<T>(
                 crate::config::log(&format!("limite Groq raggiunto su {m}: passo al modello successivo (pausa {} s)", e.retry_after.unwrap_or(60)));
                 last = format!("{m}: {e}");
             }
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(e),
         }
     }
-    Err(format!("limite Groq raggiunto su tutti i modelli ({last})"))
+    Err(ApiError {
+        provider: "Groq",
+        status: 429,
+        retry_after: None,
+        msg: format!("limite raggiunto su tutti i modelli ({last})"),
+    })
 }
 
 fn dash(v: &Option<String>) -> &str {
@@ -174,7 +184,7 @@ mod tests {
     use super::*;
 
     fn err(status: u16, retry: Option<u64>) -> ApiError {
-        ApiError { status, retry_after: retry, msg: "x".into() }
+        ApiError { provider: "Groq", status, retry_after: retry, msg: "x".into() }
     }
 
     #[test]
@@ -196,19 +206,21 @@ mod tests {
     fn other_errors_do_not_cascade() {
         let models = vec!["t2-a".to_string(), "t2-b".to_string()];
         let mut calls = 0;
-        let r: Result<(u8, String), String> = with_fallback(&models, |_| {
+        let r: Result<(u8, String), ApiError> = with_fallback(&models, |_| {
             calls += 1;
             Err(err(401, None))
         });
-        assert!(r.unwrap_err().contains("401"));
+        assert!(r.unwrap_err().to_string().contains("401"));
         assert_eq!(calls, 1);
     }
 
     #[test]
     fn all_limited_reports_error() {
         let models = vec!["t3-a".to_string()];
-        let r: Result<(u8, String), String> = with_fallback(&models, |_| Err(err(429, None)));
-        assert!(r.unwrap_err().contains("limite Groq raggiunto"));
+        let r: Result<(u8, String), ApiError> = with_fallback(&models, |_| Err(err(429, None)));
+        let e = r.unwrap_err();
+        assert_eq!(e.status, 429);
+        assert!(e.to_string().contains("limite raggiunto su tutti i modelli"));
         assert!(is_limited("t3-a"));
     }
 
@@ -242,5 +254,6 @@ mod tests {
         assert_eq!(total_tokens(r#"{"usage":{"total_tokens":321}}"#), 321);
         assert_eq!(total_tokens(r#"{"text":"ciao"}"#), 0);
         assert_eq!(total_tokens("non json"), 0);
+        assert_eq!(total_tokens(r#"{"usage":{"input_tokens":100,"output_tokens":20}}"#), 120);
     }
 }

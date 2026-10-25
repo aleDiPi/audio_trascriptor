@@ -30,6 +30,11 @@ pub struct Config {
     pub llm_model: String,
     pub fallback_models: Vec<String>,
     pub stt_fallback_models: Vec<String>,
+    /// Servizi AI in ordine di priorita' (groq, openai, anthropic): se uno finisce i crediti si passa al successivo
+    pub providers: Vec<String>,
+    pub openai_stt_model: String,
+    pub openai_llm_model: String,
+    pub anthropic_llm_model: String,
     pub max_seconds: u32,
     pub restore_clipboard: bool,
     /// Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)
@@ -80,6 +85,10 @@ impl Default for Config {
             llm_model: "openai/gpt-oss-120b".into(),
             fallback_models: vec!["openai/gpt-oss-20b".into(), "qwen/qwen3.8-27b".into()],
             stt_fallback_models: vec!["whisper-large-v3".into()],
+            providers: vec!["groq".into(), "openai".into(), "anthropic".into()],
+            openai_stt_model: "gpt-4o-mini-transcribe".into(),
+            openai_llm_model: "gpt-4o-mini".into(),
+            anthropic_llm_model: "claude-haiku-5-5".into(),
             max_seconds: 120,
             restore_clipboard: true,
             debug: false,
@@ -253,6 +262,16 @@ pub fn groq_key() -> Option<String> {
     env_value("GROQ_API_KEY")
 }
 
+/// Chiave di un servizio AI (GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY).
+pub fn provider_key(p: crate::providers::Provider) -> Option<String> {
+    env_value(p.key_env())
+}
+
+/// Salva la chiave di un servizio AI in .env.
+pub fn save_provider_key(p: crate::providers::Provider, key: &str) -> std::io::Result<()> {
+    save_env_value(p.key_env(), key)
+}
+
 /// Token GitHub di sola lettura per gli aggiornamenti automatici (TRASCRITTORE_UPDATE_TOKEN).
 pub fn update_token() -> Option<String> {
     env_value("TRASCRITTORE_UPDATE_TOKEN")
@@ -399,6 +418,33 @@ pub fn set_toml_bool(text: &str, key: &str, value: bool) -> String {
         lines.insert(at, new_line);
     }
     lines.join("\r\n") + "\r\n"
+}
+
+/// Imposta `chiave = ["a", "b"]` al livello principale del TOML, senza toccare commenti e tabelle.
+pub fn set_toml_list(text: &str, key: &str, values: &[String]) -> String {
+    let items: Vec<String> = values.iter().map(|v| format!("\"{}\"", v.replace('\\', "").replace('"', ""))).collect();
+    let new_line = format!("{key} = [{}]", items.join(", "));
+    let mut lines: Vec<String> = text.lines().map(String::from).collect();
+    let is_key = |l: &String| {
+        !l.trim_start().starts_with('#') && l.split_once('=').map_or(false, |(k, _)| k.trim() == key)
+    };
+    if let Some(i) = lines.iter().position(|l| is_key(l)) {
+        lines[i] = new_line;
+    } else {
+        let at = lines.iter().position(|l| l.trim_start().starts_with('[')).unwrap_or(lines.len());
+        lines.insert(at, String::new());
+        lines.insert(at, new_line);
+    }
+    lines.join("\r\n") + "\r\n"
+}
+
+/// Salva l'ordine dei servizi AI in config.toml (`providers = [...]`).
+pub fn set_providers(order: &[crate::providers::Provider]) {
+    let path = dir().join("config.toml");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let ids: Vec<String> = order.iter().map(|p| p.id().to_string()).collect();
+        let _ = std::fs::write(&path, set_toml_list(&text, "providers", &ids));
+    }
 }
 
 /// Apre il file di log con il programma predefinito di Windows (lo crea vuoto se non esiste).
@@ -614,6 +660,27 @@ mod tests {
     fn env_value_keeps_other_secrets() {
         let t = set_env_value("GROQ_API_KEY=gsk_a\r\n", "TRASCRITTORE_UPDATE_TOKEN", "github_pat_x");
         assert_eq!(t, "GROQ_API_KEY=gsk_a\r\nTRASCRITTORE_UPDATE_TOKEN=github_pat_x\r\n");
+    }
+
+    #[test]
+    fn toml_list_replaces_or_inserts_before_tables() {
+        let v = vec!["openai".to_string(), "groq".to_string()];
+        let t = set_toml_list("hotkey = \"x\"\nproviders = [\"groq\"]\n[[apps]]\nname = \"a\"\n", "providers", &v);
+        assert!(t.contains("providers = [\"openai\", \"groq\"]"));
+        assert_eq!(t.matches("providers").count(), 1);
+        let t = set_toml_list("hotkey = \"x\"\n# providers = []\n[[apps]]\n", "providers", &v);
+        assert!(t.find("providers = [").unwrap() < t.find("[[apps]]").unwrap());
+        let c: Config = toml::from_str(&t).unwrap();
+        assert_eq!(c.providers, v);
+    }
+
+    #[test]
+    fn providers_default_and_models_parse() {
+        let c = Config::default();
+        assert_eq!(c.providers, vec!["groq", "openai", "anthropic"]);
+        let c: Config = toml::from_str("openai_llm_model = \"gpt-x\"\nanthropic_llm_model = \"claude-y\"").unwrap();
+        assert_eq!((c.openai_llm_model.as_str(), c.anthropic_llm_model.as_str()), ("gpt-x", "claude-y"));
+        assert_eq!(c.openai_stt_model, "gpt-4o-mini-transcribe");
     }
 
     #[test]

@@ -17,7 +17,12 @@ mod combo;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod config;
 #[cfg(windows)]
-mod groq;
+mod oai;
+#[cfg(windows)]
+mod anthropic;
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
+mod providers;
 #[cfg(windows)]
 mod gui;
 #[cfg(windows)]
@@ -65,6 +70,7 @@ fn main() {
 #[cfg(windows)]
 mod app {
     use super::*;
+    use crate::providers::Provider;
     use std::ptr::null_mut;
     use std::sync::mpsc::{channel, Receiver};
     use std::sync::{Arc, Mutex};
@@ -269,11 +275,29 @@ mod app {
         });
     }
 
+    fn client_err(p: Provider, msg: String) -> usage::ApiError {
+        usage::ApiError { provider: p.name(), status: 0, retry_after: None, msg }
+    }
+
     fn process(wav: Vec<u8>, cfg: &config::Config, exe: &str, title: &str) -> Result<(), String> {
-        let key = config::groq_key().ok_or("chiave GROQ_API_KEY mancante (file .env)")?;
-        let groq = groq::Groq::new(key)?;
-        config::debug(|| format!("invio audio a Groq: {} KB, lingua '{}'", wav.len() / 1024, cfg.language));
-        let (text, stt_model) = usage::with_fallback(&cfg.stt_models(), |model| groq.transcribe(wav.clone(), model, &cfg.language))?;
+        let order = providers::parse_order(&cfg.providers);
+        let stt_order: Vec<Provider> = order.iter().copied().filter(|p| p.supports_stt()).collect();
+        config::debug(|| format!("invio audio: {} KB, lingua '{}', servizi in ordine {:?}", wav.len() / 1024, cfg.language, stt_order.iter().map(|p| p.name()).collect::<Vec<_>>()));
+        let ((text, stt_model), stt_provider) = providers::run(&stt_order, |p| config::provider_key(p).is_some(), |p| {
+            let key = config::provider_key(p).unwrap_or_default();
+            match p {
+                Provider::Groq => {
+                    let c = oai::Oai::groq(key).map_err(|e| client_err(p, e))?;
+                    usage::with_fallback(&cfg.stt_models(), |model| c.transcribe(wav.clone(), model, &cfg.language)).map(|(t, m)| (t, m))
+                }
+                Provider::OpenAi => {
+                    let c = oai::Oai::openai(key).map_err(|e| client_err(p, e))?;
+                    c.transcribe(wav.clone(), &cfg.openai_stt_model, &cfg.language).map(|t| (t, cfg.openai_stt_model.clone()))
+                }
+                Provider::Anthropic => Err(client_err(p, "non trascrive l'audio".into())),
+            }
+        })?;
+        let stt_model = format!("{} {}", stt_provider.name(), stt_model);
         config::debug(|| format!("trascrizione ricevuta con {stt_model}: {} caratteri", text.chars().count()));
         config::debug_text("trascrizione", &text);
         if text.is_empty() {
@@ -292,9 +316,27 @@ mod app {
             let prompt = cfg.system_prompt(rule);
             config::debug_text_long("prompt di sistema inviato all'AI", &prompt);
             config::debug_text("messaggio utente inviato all'AI", &format!("<trascrizione>{text}</trascrizione>"));
-            config::debug(|| format!("modelli AI in ordine: {:?}, temperatura 0.2", cfg.llm_models()));
-            match usage::with_fallback(&cfg.llm_models(), |model| groq.refine(model, &prompt, &text)) {
-                Ok((refined, llm_model)) => {
+            config::debug(|| format!("servizi AI in ordine: {:?}, temperatura 0.2", order.iter().map(|p| p.name()).collect::<Vec<_>>()));
+            let refined = providers::run(&order, |p| config::provider_key(p).is_some(), |p| {
+                let key = config::provider_key(p).unwrap_or_default();
+                match p {
+                    Provider::Groq => {
+                        let c = oai::Oai::groq(key).map_err(|e| client_err(p, e))?;
+                        usage::with_fallback(&cfg.llm_models(), |model| c.refine(model, &prompt, &text))
+                    }
+                    Provider::OpenAi => {
+                        let c = oai::Oai::openai(key).map_err(|e| client_err(p, e))?;
+                        c.refine(&cfg.openai_llm_model, &prompt, &text).map(|t| (t, cfg.openai_llm_model.clone()))
+                    }
+                    Provider::Anthropic => {
+                        let c = anthropic::Anthropic::new(key).map_err(|e| client_err(p, e))?;
+                        c.refine(&cfg.anthropic_llm_model, &prompt, &text).map(|t| (t, cfg.anthropic_llm_model.clone()))
+                    }
+                }
+            });
+            match refined {
+                Ok(((refined, llm_model), provider)) => {
+                    let llm_model = format!("{} {}", provider.name(), llm_model);
                     config::debug(|| format!("testo rifinito con {llm_model}: {} caratteri", refined.chars().count()));
                     config::debug_text("risposta dell'AI (testo rifinito)", &refined);
                     refined

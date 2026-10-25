@@ -84,13 +84,14 @@ Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge l'u
 
 ## Impostazioni (clic sull'icona nella tray)
 
-Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) apre una finestra nativa che esiste solo finche' e' aperta. E' divisa in cinque sezioni, scelte dai pulsanti in alto:
+Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) apre una finestra nativa che esiste solo finche' e' aperta. E' divisa in sei sezioni, scelte dai pulsanti in alto:
 
-1. **API**: la chiave Groq (**Verifica e salva**: la prova su Groq e, se funziona, la salva in `.env`; si vedono solo le ultime 4 cifre; **Crea chiave Groq** apre la pagina), i modelli in uso, l'utilizzo di Groq e i modelli di riserva. Groq **non** espone un credito residuo (il piano gratuito ha limiti di richieste e token): la finestra mostra i limiti e i valori rimasti letti dagli header e i contatori dall'avvio. Se Groq risponde "limite raggiunto" (HTTP 429) il programma passa al modello successivo (`fallback_models`, `stt_fallback_models`) e salta quello in pausa. Altri servizi di riserva non sono ancora supportati.
-2. **GitHub**: il token degli aggiornamenti (inserimento, **Verifica e salva**, **Rimuovi token**, **Crea token GitHub**).
-3. **Impostazioni**: aggiornamenti automatici, icona con alone (`overlay`), modalita' debug, testo dettato nel log (`debug_log_text`), apertura di log e cartella di configurazione.
-4. **Prompt**: i prompt completi inviati all'AI, scelti da un elenco per tipo di applicazione (app non riconosciuta e ogni regola `[[apps]]`, con il nome dato da `name`).
-5. **Info**: versione e stato degli aggiornamenti, percorsi, scorciatoia, modelli e descrizione del programma.
+1. **API**: la chiave Groq (**Verifica e salva**: la prova su Groq e, se funziona, la salva in `.env`; si vedono solo le ultime 4 cifre; **Crea chiave Groq** apre la pagina), i modelli in uso, l'utilizzo di Groq e i modelli di riserva. Groq **non** espone un credito residuo (il piano gratuito ha limiti di richieste e token): la finestra mostra i limiti e i valori rimasti letti dagli header e i contatori dall'avvio. Se Groq risponde "limite raggiunto" (HTTP 429) il programma passa al modello successivo (`fallback_models`, `stt_fallback_models`) e salta quello in pausa. Altri servizi di riserva: sezione **Altre AI**.
+2. **Altre AI**: ordine di priorita' dei servizi (`providers`), chiavi OpenAI e Anthropic (**Verifica e salva**, salvate in `.env`) e uno stato per servizio.
+3. **GitHub**: il token degli aggiornamenti (inserimento, **Verifica e salva**, **Rimuovi token**, **Crea token GitHub**).
+4. **Impostazioni**: aggiornamenti automatici, icona con alone (`overlay`), modalita' debug, testo dettato nel log (`debug_log_text`), apertura di log e cartella di configurazione.
+5. **Prompt**: i prompt completi inviati all'AI, scelti da un elenco per tipo di applicazione (app non riconosciuta e ogni regola `[[apps]]`, con il nome dato da `name`).
+6. **Info**: versione e stato degli aggiornamenti, percorsi, scorciatoia, modelli e descrizione del programma.
 
 I testi sono selezionabili e copiabili.
 
@@ -112,6 +113,12 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 - La parte specifica di Windows e' isolata in `src/platform.rs` e `src/hotkey.rs`: il resto e' portabile per un eventuale porting a macOS/Linux.
 - Vedi `SECURITY.md` per la gestione dei segreti.
 
+
+## Piu' servizi AI e crediti
+
+`providers = ["groq", "openai", "anthropic"]` in `config.toml` (o dalla sezione *Altre AI*) e' l'ordine di priorita'. Per ogni dettatura il programma prova il primo servizio che ha una chiave; se risponde che i crediti sono finiti (HTTP 402, `insufficient_quota`, "credit balance is too low"), che la chiave e' rifiutata o che non e' raggiungibile, lo mette in pausa e passa al successivo (i crediti esauriti e le chiavi rifiutate vengono riprovati dopo un'ora). Groq prova prima i suoi modelli di riserva. Anthropic non trascrive l'audio, quindi per la trascrizione si usano Groq e OpenAI; per la correzione del testo tutti e tre. Modelli: `openai_stt_model`, `openai_llm_model`, `anthropic_llm_model`; chiavi in `.env`: `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`.
+
+**Credito residuo:** nessuno dei tre servizi lo fornisce tramite una normale chiave API, quindi il programma non puo' leggerlo. La sezione *Altre AI* mostra per ognuno la chiave, se e' pronto o in pausa per crediti esauriti, le chiamate e i token dall'avvio e il link alla pagina dove il credito si legge.
 
 ## Icona del programma
 

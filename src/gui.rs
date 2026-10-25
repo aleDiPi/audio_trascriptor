@@ -1,7 +1,8 @@
 //! Finestra impostazioni (Win32 nativo, nessuna libreria grafica). Viene creata solo quando si clicca
 //! l'icona nella tray e distrutta alla chiusura: quando e' chiusa non occupa risorse.
 
-use crate::{config, groq, release, updater, usage};
+use crate::providers::{self, Provider};
+use crate::{anthropic, config, oai, release, updater, usage};
 use std::ptr::{null, null_mut};
 use std::sync::Mutex;
 use windows_sys::Win32::Foundation::*;
@@ -31,9 +32,19 @@ const ID_PROMPT_SEL: i32 = 119;
 const ID_CHECK_NOW: i32 = 120;
 const ID_UPDATE_NOW: i32 = 121;
 const ID_UPD_RESULT: i32 = 122;
+const ID_ORDER: i32 = 124;
+const ID_ORDER_SAVE: i32 = 125;
+const ID_OPENAI_KEY: i32 = 126;
+const ID_OPENAI_SAVE: i32 = 127;
+const ID_OPENAI_LINK: i32 = 128;
+const ID_ANTH_KEY: i32 = 129;
+const ID_ANTH_SAVE: i32 = 130;
+const ID_ANTH_LINK: i32 = 131;
+const ID_PROV_RESULT: i32 = 132;
+const ID_PROV_REPORT: i32 = 133;
 const ID_OVERLAY: i32 = 123;
-const ID_TAB0: i32 = 200; // 200..=204: pulsanti delle sezioni
-const TABS: [&str; 5] = ["API", "GitHub", "Impostazioni", "Prompt", "Info"];
+const ID_TAB0: i32 = 200; // 200..=205: pulsanti delle sezioni
+const TABS: [&str; 6] = ["API", "Altre AI", "GitHub", "Impostazioni", "Prompt", "Info"];
 
 const GROQ_KEYS_URL: &str = "https://console.groq.com/keys";
 const GITHUB_TOKEN_URL: &str = "https://github.com/settings/personal-access-tokens/new";
@@ -42,10 +53,12 @@ const WM_VERIFIED: u32 = WM_APP + 1;
 const WM_TOKEN_DONE: u32 = WM_APP + 2;
 const WM_UPDATE_INFO: u32 = WM_APP + 3;
 const WM_UPD_RESULT: u32 = WM_APP + 4;
+const WM_PROV_DONE: u32 = WM_APP + 5;
 
 static RESULT: Mutex<Option<String>> = Mutex::new(None);
 static TOKEN_RESULT: Mutex<Option<String>> = Mutex::new(None);
 static UPDATE_INFO: Mutex<Option<String>> = Mutex::new(None);
+static PROV_RESULT: Mutex<Option<(Provider, String)>> = Mutex::new(None);
 static UPD_RESULT: Mutex<Option<String>> = Mutex::new(None);
 /// Controlli di ogni sezione: (finestra, indice sezione). Si mostra solo quella scelta.
 static PAGES: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
@@ -178,7 +191,7 @@ unsafe fn build(hwnd: HWND) {
     // pulsanti delle sezioni
     for (i, name) in TABS.iter().enumerate() {
         let style = (BS_AUTORADIOBUTTON | BS_PUSHLIKE) as u32 | WS_TABSTOP | if i == 0 { WS_GROUP } else { 0 };
-        let b = child(hwnd, usize::MAX, "BUTTON", name, style, (16 + i as i32 * 122, 8, 118, 30), ID_TAB0 + i as i32);
+        let b = child(hwnd, usize::MAX, "BUTTON", name, style, (16 + i as i32 * 104, 8, 100, 30), ID_TAB0 + i as i32);
         let _ = b;
     }
 
@@ -211,16 +224,35 @@ unsafe fn build(hwnd: HWND) {
         cfg.stt_fallback_models.join(", ")
     );
     info(hwnd, p, &fb, (16, 350, 608, 34), 0);
-    info(
+    info(hwnd, p, "Altri servizi (OpenAI, Anthropic) e l'ordine in cui usarli: sezione Altre AI.", (16, 392, 608, 34), 0);
+
+    // --- 1: Altre AI (OpenAI, Anthropic) e ordine di priorita'
+    let p = 1;
+    child(hwnd, p, "STATIC", "Ordine di priorita' dei servizi (nomi separati da virgola: groq, openai, anthropic):", 0, (16, 52, 608, 18), 0);
+    let order = cfg.providers.join(", ");
+    child(hwnd, p, "EDIT", &order, ES_AUTOHSCROLL as u32 | WS_TABSTOP, (16, 74, 470, 24), ID_ORDER);
+    child(hwnd, p, "BUTTON", "Salva ordine", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 72, 128, 28), ID_ORDER_SAVE);
+    child(hwnd, p, "STATIC", "OpenAI - chiave API (trascrizione e correzione):", 0, (16, 108, 470, 18), 0);
+    child(hwnd, p, "BUTTON", "Crea chiave OpenAI", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 104, 128, 24), ID_OPENAI_LINK);
+    child(hwnd, p, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 130, 470, 24), ID_OPENAI_KEY);
+    child(hwnd, p, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 128, 128, 28), ID_OPENAI_SAVE);
+    child(hwnd, p, "STATIC", "Anthropic - chiave API (solo correzione del testo):", 0, (16, 164, 470, 18), 0);
+    child(hwnd, p, "BUTTON", "Crea chiave Anthropic", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 160, 128, 24), ID_ANTH_LINK);
+    child(hwnd, p, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 186, 470, 24), ID_ANTH_KEY);
+    child(hwnd, p, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 184, 128, 28), ID_ANTH_SAVE);
+    info(hwnd, p, "Le chiavi stanno in .env. Se un servizio finisce i crediti passo al successivo; modelli in config.toml (openai_llm_model, openai_stt_model, anthropic_llm_model).", (16, 218, 608, 34), ID_PROV_RESULT);
+    child(
         hwnd,
         p,
-        "Altri servizi di riserva (per esempio OpenAI): non ancora supportati. Dimmi quali ti servono e li aggiungo con la loro chiave in questa sezione.",
-        (16, 392, 608, 50),
-        0,
+        "EDIT",
+        &provider_text(),
+        (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | WS_VSCROLL,
+        (16, 258, 608, 270),
+        ID_PROV_REPORT,
     );
 
-    // --- 1: GitHub
-    let p = 1;
+    // --- 2: GitHub
+    let p = 2;
     child(hwnd, p, "STATIC", "Token GitHub per gli aggiornamenti (incolla qui per inserirlo o cambiarlo):", 0, (16, 52, 470, 18), 0);
     child(hwnd, p, "BUTTON", "Crea token GitHub", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 48, 128, 24), ID_GITHUB_LINK);
     child(hwnd, p, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 76, 470, 24), ID_TOKEN);
@@ -235,8 +267,8 @@ unsafe fn build(hwnd: HWND) {
         0,
     );
 
-    // --- 2: Impostazioni
-    let p = 2;
+    // --- 3: Impostazioni
+    let p = 3;
     let auto = child(hwnd, p, "BUTTON", "Aggiornamenti automatici attivi (serve il token GitHub)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 56, 600, 22), ID_AUTOUPD);
     SendMessageW(auto, BM_SETCHECK, config::auto_update_enabled() as usize, 0);
     child(hwnd, p, "BUTTON", "Verifica aggiornamenti", BS_PUSHBUTTON as u32 | WS_TABSTOP, (16, 86, 170, 28), ID_CHECK_NOW);
@@ -267,8 +299,8 @@ unsafe fn build(hwnd: HWND) {
         0,
     );
 
-    // --- 3: Prompt
-    let p = 3;
+    // --- 4: Prompt
+    let p = 4;
     child(hwnd, p, "STATIC", "Prompt inviati all'AI, per tipo di applicazione:", 0, (16, 52, 470, 18), 0);
     let combo = child(hwnd, p, "COMBOBOX", "", (CBS_DROPDOWNLIST | CBS_HASSTRINGS) as u32 | WS_VSCROLL | WS_TABSTOP, (16, 76, 608, 260), ID_PROMPT_SEL);
     let cases = cfg.prompt_cases();
@@ -288,8 +320,8 @@ unsafe fn build(hwnd: HWND) {
         ID_PROMPTS,
     );
 
-    // --- 4: Info
-    let p = 4;
+    // --- 5: Info
+    let p = 5;
     info(hwnd, p, &update_info_initial(), (16, 56, 608, 110), ID_VERINFO);
     let exe = std::env::current_exe().map(|e| e.display().to_string()).unwrap_or_default();
     let general = format!(
@@ -396,6 +428,79 @@ unsafe fn check_update_in_background(hwnd: HWND) {
     });
 }
 
+fn provider_text() -> String {
+    let order = providers::parse_order(&config::load().providers);
+    providers::report(&order, config::provider_key).replace("\r\n", "\n").replace('\n', "\r\n")
+}
+
+/// Salva l'ordine di priorita' scritto nella casella (nomi riconosciuti, senza doppioni).
+unsafe fn on_order_save(hwnd: HWND) {
+    let typed = get_text(GetDlgItem(hwnd, ID_ORDER));
+    let names: Vec<String> = typed.split([',', ';', ' ']).filter(|s| !s.trim().is_empty()).map(String::from).collect();
+    let order = providers::parse_order(&names);
+    let unknown: Vec<&String> = names.iter().filter(|n| Provider::parse(n).is_none()).collect();
+    config::set_providers(&order);
+    let ids: Vec<&str> = order.iter().map(|p| p.id()).collect();
+    set_text(GetDlgItem(hwnd, ID_ORDER), &ids.join(", "));
+    let mut msg = format!("Ordine salvato: {}. Vale dalla prossima dettatura.", ids.join(" > "));
+    if !unknown.is_empty() {
+        msg.push_str(&format!(" Nomi non riconosciuti e ignorati: {}.", unknown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")));
+    }
+    set_text(GetDlgItem(hwnd, ID_PROV_RESULT), &msg);
+    set_text(GetDlgItem(hwnd, ID_PROV_REPORT), &provider_text());
+}
+
+/// Prova la chiave di OpenAI/Anthropic elencando i modelli e, se funziona e ne e' stata scritta una nuova, la salva.
+unsafe fn on_provider_save(hwnd: HWND, p: Provider, key_id: i32, save_id: i32) {
+    let typed = get_text(GetDlgItem(hwnd, key_id)).trim().to_string();
+    EnableWindow(GetDlgItem(hwnd, save_id), 0);
+    set_text(GetDlgItem(hwnd, ID_PROV_RESULT), &format!("Verifica {} in corso...", p.name()));
+    let h = hwnd as usize;
+    std::thread::spawn(move || {
+        let msg = verify_provider(p, typed);
+        *PROV_RESULT.lock().unwrap() = Some((p, msg));
+        unsafe { PostMessageW(h as HWND, WM_PROV_DONE, 0, 0) };
+    });
+}
+
+fn verify_provider(p: Provider, typed: String) -> String {
+    let key = if typed.is_empty() {
+        match config::provider_key(p) {
+            Some(k) => k,
+            None => return format!("Inserisci la chiave API {}.", p.name()),
+        }
+    } else {
+        typed.clone()
+    };
+    if key.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return "La chiave non deve contenere spazi.".into();
+    }
+    let listed = match p {
+        Provider::Anthropic => anthropic::Anthropic::new(key.clone()).and_then(|a| a.list_models().map_err(|e| e.to_string())),
+        _ => oai::Oai::new(p, key.clone()).and_then(|o| o.list_models().map_err(|e| e.to_string())),
+    };
+    let ids = match listed {
+        Ok(v) => v,
+        Err(e) => return format!("Chiave {} NON valida o rete non raggiungibile.\r\n{e}", p.name()),
+    };
+    let saved = !typed.is_empty();
+    if saved {
+        if let Err(e) = config::save_provider_key(p, &key) {
+            return format!("La chiave funziona ma non e' stato possibile salvarla: {e}");
+        }
+    }
+    let cfg = config::load();
+    let wanted: Vec<&str> = match p {
+        Provider::OpenAi => vec![cfg.openai_llm_model.as_str(), cfg.openai_stt_model.as_str()],
+        _ => vec![cfg.anthropic_llm_model.as_str()],
+    };
+    let lines: Vec<String> = wanted
+        .iter()
+        .map(|m| format!("{m}: {}", if ids.iter().any(|i| i == m) { "disponibile" } else { "NON disponibile nel tuo account" }))
+        .collect();
+    format!("Chiave {} valida{}.\r\n{}", p.name(), if saved { " e salvata" } else { "" }, lines.join("\r\n"))
+}
+
 fn usage_text() -> String {
     usage::report().replace("\r\n", "\n").replace('\n', "\r\n")
 }
@@ -488,7 +593,7 @@ fn verify_and_save(typed: String) -> String {
     if key.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return "La chiave non deve contenere spazi.".into();
     }
-    let listed = groq::Groq::new(key.clone()).and_then(|g| g.list_models().map_err(|e| e.to_string()));
+    let listed = oai::Oai::groq(key.clone()).and_then(|g| g.list_models().map_err(|e| e.to_string()));
     let ids = match listed {
         Ok(v) => v,
         Err(e) => return format!("Chiave NON valida o rete non raggiungibile.\r\n{e}"),
@@ -522,6 +627,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 ID_TOKEN_SAVE => on_token_save(hwnd),
                 ID_OPENLOG => config::open_log(),
                 ID_GROQ_LINK => open_url(GROQ_KEYS_URL),
+                ID_ORDER_SAVE => on_order_save(hwnd),
+                ID_OPENAI_SAVE => on_provider_save(hwnd, Provider::OpenAi, ID_OPENAI_KEY, ID_OPENAI_SAVE),
+                ID_ANTH_SAVE => on_provider_save(hwnd, Provider::Anthropic, ID_ANTH_KEY, ID_ANTH_SAVE),
+                ID_OPENAI_LINK => open_url(Provider::OpenAi.keys_url()),
+                ID_ANTH_LINK => open_url(Provider::Anthropic.keys_url()),
                 ID_OVERLAY => {
                     let on = SendMessageW(GetDlgItem(hwnd, ID_OVERLAY), BM_GETCHECK, 0, 0) == 1;
                     config::set_overlay(on);
@@ -566,10 +676,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 SendMessageW(GetDlgItem(hwnd, ID_DEBUG), BM_SETCHECK, config::debug_enabled() as usize, 0);
                 SendMessageW(GetDlgItem(hwnd, ID_AUTOUPD), BM_SETCHECK, config::auto_update_enabled() as usize, 0);
                 SendMessageW(GetDlgItem(hwnd, ID_OVERLAY), BM_SETCHECK, config::overlay_enabled() as usize, 0);
-                let h = GetDlgItem(hwnd, ID_USAGE);
-                let t = usage_text();
-                if get_text(h) != t {
-                    set_text(h, &t); // evita di riportare in cima lo scorrimento se non cambia nulla
+                for (id, t) in [(ID_USAGE, usage_text()), (ID_PROV_REPORT, provider_text())] {
+                    let h = GetDlgItem(hwnd, id);
+                    if get_text(h) != t {
+                        set_text(h, &t); // evita di riportare in cima lo scorrimento se non cambia nulla
+                    }
                 }
             }
             0
@@ -592,6 +703,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 }
             }
             EnableWindow(GetDlgItem(hwnd, ID_TOKEN_SAVE), 1);
+            0
+        }
+        WM_PROV_DONE => {
+            if let Some((p, text)) = PROV_RESULT.lock().unwrap().take() {
+                set_text(GetDlgItem(hwnd, ID_PROV_RESULT), &text);
+                let (key_id, save_id) = if p == Provider::OpenAi { (ID_OPENAI_KEY, ID_OPENAI_SAVE) } else { (ID_ANTH_KEY, ID_ANTH_SAVE) };
+                if text.contains("salvata") {
+                    set_text(GetDlgItem(hwnd, key_id), "");
+                }
+                EnableWindow(GetDlgItem(hwnd, save_id), 1);
+                set_text(GetDlgItem(hwnd, ID_PROV_REPORT), &provider_text());
+            }
             0
         }
         WM_UPDATE_INFO => {

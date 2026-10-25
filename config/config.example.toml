@@ -27,6 +27,13 @@ max_seconds = 120
 # Aggiornamenti automatici (servono anche il token GitHub e l'installer: vedi README). Si cambia anche dalle Impostazioni.
 auto_update = true
 
+# Servizi AI in ordine di priorita': se uno finisce i crediti passo al successivo.
+# Servono le chiavi GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY in .env (Anthropic non trascrive l'audio).
+providers = ["groq", "openai", "anthropic"]
+openai_stt_model = "gpt-4o-mini-transcribe"
+openai_llm_model = "gpt-4o-mini"
+anthropic_llm_model = "claude-haiku-5-5"
+
 # Icona in basso a destra mentre tieni premuta la scorciatoia: mostra l'app dove verra' incollato il testo, con un alone che segue il volume. Si cambia anche dalle Impostazioni.
 overlay = true
 
