@@ -140,8 +140,8 @@ impl Config {
     }
 }
 
-/// Cartella di lavoro: la prima tra cwd, cartella dell'exe, %APPDATA%\Trascrittore
-/// che contiene config.toml; altrimenti viene creata %APPDATA%\Trascrittore.
+/// Cartella di lavoro: la prima tra cwd, cartella dell'exe, %ProgramData%\Trascrittore (installer),
+/// %APPDATA%\Trascrittore che contiene config.toml; altrimenti viene creata %APPDATA%\Trascrittore.
 pub fn dir() -> &'static Path {
     DIR.get_or_init(|| {
         let mut candidates: Vec<PathBuf> = Vec::new();
@@ -150,6 +150,9 @@ pub fn dir() -> &'static Path {
         }
         if let Some(d) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
             candidates.push(d);
+        }
+        if let Some(p) = std::env::var_os("ProgramData") {
+            candidates.push(PathBuf::from(p).join("Trascrittore"));
         }
         let appdata = std::env::var_os("APPDATA")
             .map(|a| PathBuf::from(a).join("Trascrittore"))
@@ -571,15 +574,18 @@ mod tests {
     }
 
     #[test]
-    fn installer_is_per_machine_in_programdata() {
+    fn installer_is_per_machine_in_program_files() {
         let iss = installer_script();
-        assert!(iss.contains("DefaultDirName={commonappdata}\\Trascrittore"));
+        assert!(iss.contains("DefaultDirName={autopf}\\Trascrittore"));
         assert!(iss.contains("PrivilegesRequired=admin"));
-        assert!(iss.contains("Permissions: users-modify")); // l'auto-aggiornamento non deve richiedere UAC
-        assert!(!iss.contains("{userappdata}\\Trascrittore\\.env"));
-        // config e .env stanno accanto al programma, dove li cerca dir()
-        assert!(iss.contains("DestDir: \"{app}\"; DestName: \"config.toml\""));
-        assert!(iss.contains("DestDir: \"{app}\"; DestName: \".env\""));
+        assert!(iss.contains("ArchitecturesInstallIn64BitMode=x64compatible"));
+        assert!(iss.contains("UsePreviousAppDir=no")); // sposta chi era in ProgramData
+        // i dati scrivibili stanno in ProgramData (dove li cerca dir()), non in Program Files
+        assert!(iss.contains("Name: \"{commonappdata}\\Trascrittore\"; Permissions: users-modify"));
+        assert!(!iss.contains("Name: \"{app}\"; Permissions"));
+        assert!(iss.contains("DestDir: \"{commonappdata}\\Trascrittore\"; DestName: \"config.toml\""));
+        assert!(iss.contains("DestDir: \"{commonappdata}\\Trascrittore\"; DestName: \".env\""));
+        assert!(iss.contains("[InstallDelete]"));
     }
 
     #[test]
@@ -588,6 +594,21 @@ mod tests {
         assert!(iss.contains("https://github.com/settings/personal-access-tokens/new"));
         for needle in ["Only select repositories", "Contents", "Read-only", "aleDiPi/audio_trascriptor", "github_pat_"] {
             assert!(iss.contains(needle), "manca '{needle}' nella pagina del token");
+        }
+    }
+
+    #[test]
+    fn uninstaller_removes_every_leftover() {
+        let iss = installer_script();
+        assert!(!iss.contains("uninsneveruninstall")); // config e chiavi non devono sopravvivere
+        for needle in [
+            "Type: filesandordirs; Name: \"{commonappdata}\\Trascrittore\"",
+            "Type: filesandordirs; Name: \"{userappdata}\\Trascrittore\"",
+            "Type: filesandordirs; Name: \"{localappdata}\\Programs\\Trascrittore\"",
+            "Type: filesandordirs; Name: \"{localappdata}\\Temp\\Trascrittore-Update\"",
+            "ValueName: \"TrascrittoreAudio\"; Flags: dontcreatekey uninsdeletevalue",
+        ] {
+            assert!(iss.contains(needle), "manca '{needle}' nella disinstallazione");
         }
     }
 }

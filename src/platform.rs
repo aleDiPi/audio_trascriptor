@@ -181,10 +181,13 @@ pub fn set_autostart(on: bool) {
 }
 
 /// Avvia l'installer in silenzio dopo 2 secondi (il tempo di far chiudere questo programma).
+/// L'installer e' per tutto il PC: `-Verb RunAs` mostra la richiesta di amministratore (UAC).
 pub fn run_installer_after_exit(path: &std::path::Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     let quoted = path.display().to_string().replace('\'', "''");
-    let script = format!("Start-Sleep -Seconds 2; & '{quoted}' /VERYSILENT /SUPPRESSMSGBOXES /NORESTART");
+    let script = format!(
+        "Start-Sleep -Seconds 2; Start-Process -FilePath '{quoted}' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Verb RunAs"
+    );
     std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
         .creation_flags(0x0800_0000) // CREATE_NO_WINDOW

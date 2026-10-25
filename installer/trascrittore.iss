@@ -10,8 +10,10 @@ AppId={{8F2D5B1A-3C47-4E9B-A6D1-52C7B0E94F13}
 AppName=Trascrittore audio
 AppVersion={#AppVersion}
 AppPublisher=aleDiPi
-; Cartella legata al PC, non all'utente: C:\ProgramData\Trascrittore (programma, config.toml, .env e log insieme)
-DefaultDirName={commonappdata}\Trascrittore
+; Programma in C:\Program Files\Trascrittore (per tutto il PC, 64 bit). Dati scrivibili (config.toml, .env, log) in C:\ProgramData\Trascrittore
+DefaultDirName={autopf}\Trascrittore
+; Chi aveva la versione precedente (cartella ProgramData) viene spostato in Program Files
+UsePreviousAppDir=no
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
@@ -38,8 +40,14 @@ Name: "app"; Description: "Trascrittore audio"; Types: compact full custom; Flag
 Name: "devtools"; Description: "Rust + Visual Studio Build Tools (servono solo per compilare dal sorgente, download di diversi GB)"; Types: full
 
 [Dirs]
-; Gli utenti del PC possono scrivere qui: serve all'aggiornamento automatico (sostituisce l'exe senza UAC) e alle impostazioni
-Name: "{app}"; Permissions: users-modify
+; Dati del programma: gli utenti del PC possono scriverci (impostazioni, chiavi, log). L'exe sta fuori, in Program Files, non modificabile senza amministratore
+Name: "{commonappdata}\Trascrittore"; Permissions: users-modify
+
+[InstallDelete]
+; Resti della versione precedente installata in ProgramData (solo programma e script: config e .env restano)
+Type: files; Name: "{commonappdata}\Trascrittore\trascrittore.exe"
+Type: files; Name: "{commonappdata}\Trascrittore\trascrittore.exe.old"
+Type: filesandordirs; Name: "{commonappdata}\Trascrittore\scripts"
 
 [Tasks]
 Name: "autostart"; Description: "Avvia Trascrittore con Windows (parte ridotto nella tray)"
@@ -47,15 +55,25 @@ Name: "autostart"; Description: "Avvia Trascrittore con Windows (parte ridotto n
 [Files]
 Source: "..\target\release\trascrittore.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\setup-windows.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
-; Configurazione e segreti dell'utente: creati solo se mancano, mai cancellati dalla disinstallazione
-Source: "..\config\config.example.toml"; DestDir: "{app}"; DestName: "config.toml"; Flags: onlyifdoesntexist uninsneveruninstall
-Source: "..\.env.example"; DestDir: "{app}"; DestName: ".env"; Flags: onlyifdoesntexist uninsneveruninstall
+; Configurazione e chiavi: create solo se mancano (non sovrascritte dagli aggiornamenti); la disinstallazione le cancella (vedi [UninstallDelete])
+Source: "..\config\config.example.toml"; DestDir: "{commonappdata}\Trascrittore"; DestName: "config.toml"; Flags: onlyifdoesntexist
+Source: "..\.env.example"; DestDir: "{commonappdata}\Trascrittore"; DestName: ".env"; Flags: onlyifdoesntexist
+
+[UninstallDelete]
+; La disinstallazione non lascia nulla in giro: dati (config.toml, .env con le chiavi, log), resti di versioni precedenti e download temporanei
+Type: filesandordirs; Name: "{commonappdata}\Trascrittore"
+Type: filesandordirs; Name: "{userappdata}\Trascrittore"
+Type: filesandordirs; Name: "{localappdata}\Programs\Trascrittore"
+Type: filesandordirs; Name: "{localappdata}\Temp\Trascrittore-Update"
+Type: filesandordirs; Name: "{app}"
 
 [Icons]
 Name: "{autoprograms}\Trascrittore audio"; Filename: "{app}\trascrittore.exe"
-Name: "{autoprograms}\Trascrittore - cartella configurazione"; Filename: "{app}"
+Name: "{autoprograms}\Trascrittore - cartella configurazione"; Filename: "{commonappdata}\Trascrittore"
 
 [Registry]
+; Voce di avvio automatico: rimossa alla disinstallazione anche se l'ha creata il menu della tray
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "TrascrittoreAudio"; Flags: dontcreatekey uninsdeletevalue
 ; Eventuale avvio automatico della vecchia installazione per-utente: viene sostituito da quello sotto (se scelto)
 ; Stessa chiave e valore usati dalla voce "Avvia con Windows" del menu nella tray
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "TrascrittoreAudio"; ValueData: """{app}\trascrittore.exe"""; Tasks: autostart; Flags: uninsdeletevalue
@@ -122,7 +140,7 @@ var
   I, N: Integer;
   Found: Boolean;
 begin
-  Path := ExpandConstant('{app}\.env');
+  Path := ExpandConstant('{commonappdata}\Trascrittore\.env');
   if not LoadStringsFromFile(Path, Lines) then
     SetArrayLength(Lines, 0);
   Found := False;
@@ -147,7 +165,7 @@ var
   OldDir, NewDir: String;
 begin
   OldDir := ExpandConstant('{userappdata}\Trascrittore');
-  NewDir := ExpandConstant('{app}');
+  NewDir := ExpandConstant('{commonappdata}\Trascrittore');
   ForceDirectories(NewDir);
   if FileExists(OldDir + '\config.toml') and not FileExists(NewDir + '\config.toml') then
     FileCopy(OldDir + '\config.toml', NewDir + '\config.toml', True);
