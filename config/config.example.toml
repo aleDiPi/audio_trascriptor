@@ -57,6 +57,7 @@ Rispondi solo con il testo finale: nessun commento, nessuna domanda, nessun cont
 dictionary = []
 
 # Regole per applicazione. Se piu' regole corrispondono vince la prima.
+#   name           = (opzionale) categoria mostrata nelle Impostazioni
 #   exe            = nomi del processo in primo piano (senza distinzione maiuscole/minuscole)
 #   title_contains = (opzionale) testo che deve comparire nel titolo della finestra
 #   prompt         = istruzioni extra per l'AI, aggiunte al prompt di base
@@ -65,31 +66,37 @@ dictionary = []
 #   paste          = "ctrl+v" (default) oppure "shift+insert" (per alcuni terminali)
 
 [[apps]]
+name = "Email"
 exe = ["outlook.exe", "olk.exe", "thunderbird.exe"]
 prompt = """CONTESTO: stai scrivendo in un client di posta. Usa un tono professionale e cortese, paragrafi chiari. \
 Non inventare saluti o firme che non sono stati detti."""
 
 [[apps]]
+name = "Chat"
 exe = ["slack.exe", "teams.exe", "ms-teams.exe", "discord.exe", "telegram.exe", "whatsapp.exe"]
 prompt = """CONTESTO: stai scrivendo in una chat. Mantieni il messaggio breve e naturale, tono informale ma corretto. \
 Niente saluti o chiusure aggiunti."""
 
 [[apps]]
+name = "Editor di codice"
 exe = ["code.exe", "devenv.exe", "idea64.exe", "pycharm64.exe", "cursor.exe"]
 prompt = """CONTESTO: il testo e' destinato a un editor di codice (commento, commit, istruzione tecnica). \
 Sii conciso e preciso, mantieni i termini tecnici in inglese, non usare Markdown."""
 
 [[apps]]
+name = "Terminale"
 exe = ["windowsterminal.exe", "cmd.exe", "powershell.exe", "pwsh.exe"]
 raw = true
 
 [[apps]]
+name = "Documenti"
 exe = ["winword.exe", "notepad.exe", "obsidian.exe", "onenote.exe"]
 prompt = """CONTESTO: stai scrivendo un documento. Usa prosa ben scritta, con paragrafi e punteggiatura corretti. \
 Mantieni il contenuto e lo stile dell'autore."""
 
 # App Claude desktop: incolla e invia subito il messaggio
 [[apps]]
+name = "Claude"
 exe = ["claude.exe"]
 send_enter = true
 prompt = """CONTESTO: il testo e' un messaggio per un assistente AI. Mantieni la richiesta fedele a quanto detto, \
