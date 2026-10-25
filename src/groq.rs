@@ -89,16 +89,9 @@ impl Groq {
             .iter()
             .filter_map(|(k, v)| Some((k.as_str().to_string(), v.to_str().ok()?.to_string())))
             .collect();
-        let retry_after = headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("retry-after"))
-            .and_then(|(_, v)| v.trim().parse::<f64>().ok())
-            .map(|s| s.ceil() as u64);
+        let retry_after = usage::parse_retry_after(&headers);
         let text = resp.text().map_err(|e| net(e.to_string()))?;
-        let tokens = serde_json::from_str::<serde_json::Value>(&text)
-            .ok()
-            .and_then(|v| v["usage"]["total_tokens"].as_u64())
-            .unwrap_or(0);
+        let tokens = usage::total_tokens(&text);
         usage::record(model, &headers, tokens);
         crate::config::debug(|| {
             format!(

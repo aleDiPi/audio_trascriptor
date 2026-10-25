@@ -299,7 +299,10 @@ pub fn set_debug(on: bool) {
 
 /// Cancella il log e quello ruotato (`.log.1`).
 pub fn delete_logs() {
-    let path = log_path();
+    delete_logs_at(&log_path());
+}
+
+fn delete_logs_at(path: &Path) {
     let _ = std::fs::remove_file(path.with_extension("log.1"));
     let _ = std::fs::remove_file(path);
 }
@@ -368,11 +371,14 @@ pub fn format_utc(secs: u64) -> String {
 
 /// Scrive una riga. Oltre 512 KB il file diventa `.log.1` (al massimo 2 file, circa 1 MB in tutto).
 fn write_log(level: &str, msg: &str) {
-    let path = log_path();
-    if std::fs::metadata(&path).map(|m| m.len() > 512 * 1024).unwrap_or(false) {
+    write_log_at(&log_path(), 512 * 1024, level, msg);
+}
+
+fn write_log_at(path: &Path, max_bytes: u64, level: &str, msg: &str) {
+    if std::fs::metadata(path).map(|m| m.len() > max_bytes).unwrap_or(false) {
         let old = path.with_extension("log.1");
         let _ = std::fs::remove_file(&old);
-        let _ = std::fs::rename(&path, &old);
+        let _ = std::fs::rename(path, &old);
     }
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -525,5 +531,37 @@ mod tests {
         let c: Config = toml::from_str("debug = true\ndebug_log_text = true").unwrap();
         assert!(c.debug && c.debug_log_text);
         assert!(!example().debug && !example().debug_log_text);
+    }
+
+    fn temp_log(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("trascrittore-test-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d.join("trascrittore.log")
+    }
+
+    #[test]
+    fn log_rotates_keeping_at_most_two_files() {
+        let p = temp_log("rotate");
+        write_log_at(&p, 100, "log", &"a".repeat(200));
+        write_log_at(&p, 100, "log", "seconda"); // il primo supera il limite: ruota
+        let old = p.with_extension("log.1");
+        assert!(std::fs::read_to_string(&old).unwrap().contains(&"a".repeat(200)));
+        let cur = std::fs::read_to_string(&p).unwrap();
+        assert!(cur.contains("[log] seconda") && !cur.contains("aaaa"));
+        write_log_at(&p, 10, "log", "terza"); // ruota di nuovo: il vecchio .log.1 viene sostituito
+        assert!(!std::fs::read_to_string(&old).unwrap().contains("aaaa"));
+        assert_eq!(std::fs::read_dir(p.parent().unwrap()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn delete_logs_removes_main_and_rotated() {
+        let p = temp_log("delete");
+        write_log_at(&p, 10, "log", "uno");
+        write_log_at(&p, 10, "log", "due");
+        assert!(p.exists() && p.with_extension("log.1").exists());
+        delete_logs_at(&p);
+        assert!(!p.exists() && !p.with_extension("log.1").exists());
+        delete_logs_at(&p); // nessun errore se non c'e' piu' nulla
     }
 }

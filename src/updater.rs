@@ -36,10 +36,6 @@ pub fn fetch_latest(token: &str) -> Result<Release, String> {
     release::parse_release(&body)
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 /// Scarica un asset e ne verifica lo SHA-256 con quello dichiarato da GitHub.
 fn download(token: &str, asset: &Asset) -> Result<Vec<u8>, String> {
     let resp = client()?
@@ -52,7 +48,7 @@ fn download(token: &str, asset: &Asset) -> Result<Vec<u8>, String> {
         return Err(format!("download: HTTP {}", resp.status()));
     }
     let bytes = resp.bytes().map_err(|e| e.to_string())?;
-    if !release::digest_matches(asset.digest.as_deref(), &hex(&Sha256::digest(&bytes))) {
+    if !release::digest_matches(asset.digest.as_deref(), &release::hex(&Sha256::digest(&bytes))) {
         return Err("file scaricato non valido (SHA-256 diverso): aggiornamento annullato".into());
     }
     Ok(bytes.to_vec())

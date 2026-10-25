@@ -64,6 +64,10 @@ pub fn needs_update(current: Option<&str>, remote: &str) -> bool {
 }
 
 /// L'installer scaricato va eseguito solo se il suo SHA-256 coincide con quello dichiarato da GitHub.
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 pub fn digest_matches(expected: Option<&str>, actual_hex: &str) -> bool {
     expected
         .and_then(|d| d.strip_prefix("sha256:"))
@@ -128,5 +132,10 @@ mod tests {
     fn short_commit() {
         assert_eq!(short("abcdef1234"), "abcdef1");
         assert_eq!(short("abc"), "abc");
+    }
+
+    #[test]
+    fn hex_is_lowercase_and_padded() {
+        assert_eq!(hex(&[0x00, 0x0a, 0xff]), "000aff");
     }
 }

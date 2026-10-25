@@ -75,6 +75,24 @@ pub fn record(model: &str, headers: &[(String, String)], tokens: u64) {
     });
 }
 
+/// Secondi d'attesa dall'header `retry-after` (arrotondati per eccesso).
+pub fn parse_retry_after(headers: &[(String, String)]) -> Option<u64> {
+    headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("retry-after"))
+        .and_then(|(_, v)| v.trim().parse::<f64>().ok())
+        .filter(|s| *s >= 0.0)
+        .map(|s| s.ceil() as u64)
+}
+
+/// Token totali dichiarati nel corpo della risposta (`usage.total_tokens`), 0 se assenti.
+pub fn total_tokens(body: &str) -> u64 {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v["usage"]["total_tokens"].as_u64())
+        .unwrap_or(0)
+}
+
 pub fn mark_limited(model: &str, secs: u64) {
     with_entry(model, |s| s.limited_until = now() + secs);
 }
@@ -207,5 +225,22 @@ mod tests {
         assert!(r.contains("t4-model"));
         assert!(r.contains("14399 rimaste su 14400"));
         assert!(r.contains("2 chiamate, 150 token"));
+    }
+
+    #[test]
+    fn retry_after_rounds_up_and_ignores_garbage() {
+        let h = |v: &str| vec![("Retry-After".to_string(), v.to_string())];
+        assert_eq!(parse_retry_after(&h("7")), Some(7));
+        assert_eq!(parse_retry_after(&h(" 2.1 ")), Some(3));
+        assert_eq!(parse_retry_after(&h("abc")), None);
+        assert_eq!(parse_retry_after(&h("-5")), None);
+        assert_eq!(parse_retry_after(&[]), None);
+    }
+
+    #[test]
+    fn total_tokens_from_body() {
+        assert_eq!(total_tokens(r#"{"usage":{"total_tokens":321}}"#), 321);
+        assert_eq!(total_tokens(r#"{"text":"ciao"}"#), 0);
+        assert_eq!(total_tokens("non json"), 0);
     }
 }
