@@ -21,6 +21,7 @@ pub struct Config {
     pub max_seconds: u32,
     pub restore_clipboard: bool,
     pub default_prompt: String,
+    pub dictionary: Vec<String>,
     pub apps: Vec<AppRule>,
 }
 
@@ -32,6 +33,7 @@ pub struct AppRule {
     pub prompt: String,
     pub raw: bool,
     pub paste: String,
+    pub send_enter: bool,
 }
 
 impl Default for Config {
@@ -45,6 +47,7 @@ impl Default for Config {
             max_seconds: 120,
             restore_clipboard: true,
             default_prompt: "Correggi punteggiatura ed errori del testo dettato, senza cambiarne il significato.".into(),
+            dictionary: Vec::new(),
             apps: Vec::new(),
         }
     }
