@@ -1,6 +1,6 @@
 # Trascrittore audio
 
-Dettatura vocale per Windows in stile OpenWhispr, scritta in Rust (un solo `.exe`, nessun runtime da installare).
+Dettatura vocale per Windows, scritta in Rust (un solo `.exe`, nessun runtime da installare).
 
 **Come funziona:** tieni premuta la scorciatoia (default `Ctrl+Win`), parla, rilascia. L'audio del microfono predefinito di Windows viene trascritto da Groq Whisper, rifinito da un LLM Groq con un prompt che dipende dall'app in primo piano (Outlook, Slack, VS Code, Word...) e il risultato viene incollato dove hai il cursore.
 
@@ -64,7 +64,7 @@ Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge la 
 Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) apre una finestra nativa che esiste solo finche' e' aperta. Mostra:
 
 - la chiave API Groq: scrivila e premi **Verifica e salva**; il programma la prova su Groq e, se funziona, la salva in `.env` (si vedono solo le ultime 4 cifre);
-- i modelli in uso: trascrizione `whisper-large-v3-turbo` e AI `openai/gpt-oss-120b`, i modelli Groq predefiniti di OpenWhispr; in `config.toml` si possono cambiare;
+- i modelli in uso: trascrizione `whisper-large-v3-turbo` e AI `openai/gpt-oss-120b`; in `config.toml` si possono cambiare;
 - la versione installata e se c'e' un aggiornamento, con il campo per il token degli aggiornamenti;
 - l'utilizzo di Groq: Groq **non** espone un credito residuo (il piano gratuito ha limiti di richieste e token). La finestra mostra i limiti e i valori rimasti letti dagli header di Groq e i contatori dall'avvio, e si aggiorna da sola. I valori compaiono dopo il primo utilizzo;
 - i modelli di riserva: se Groq risponde "limite raggiunto" (HTTP 429) il programma passa in automatico al modello successivo (`fallback_models`, `stt_fallback_models`) e salta quello in pausa finche' il limite non si resetta;
@@ -75,7 +75,7 @@ Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) a
 - `hotkey`: scorciatoia, es. `"ctrl+win"`, `"ctrl+alt+space"`, `"f9"`.
 - `mode`: `"hold"` (tieni premuto) o `"toggle"` (premi per iniziare/finire).
 - `language`, `stt_model`, `llm_model`, `fallback_models`, `stt_fallback_models`, `max_seconds`, `restore_clipboard`.
-- `default_prompt`: prompt di base sempre applicato (prompt di pulizia di [OpenWhispr](https://github.com/OpenWhispr/openwhispr), licenza MIT). Il `prompt` della regola dell'app viene aggiunto a questo.
+- `default_prompt`: prompt di base sempre applicato (pulizia del testo dettato). Il `prompt` della regola dell'app viene aggiunto a questo.
 - `dictionary`: parole/nomi da scrivere esattamente cosi'.
 - `[[apps]]`: regole per app, con `exe` (nomi dei processi), `prompt`, `raw = true` per incollare la trascrizione senza AI, `send_enter = true` per premere Invio dopo l'incolla (es. Claude desktop, al posto dello script AutoHotkey `claude-auto-invio.ahk`), `paste = "shift+insert"` per i terminali che lo richiedono, `title_contains` per distinguere ad es. un sito nel browser.
 
@@ -88,9 +88,6 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 - La parte specifica di Windows e' isolata in `src/platform.rs` e `src/hotkey.rs`: il resto e' portabile per un eventuale porting a macOS/Linux.
 - Vedi `SECURITY.md` per la gestione dei segreti.
 
-## Crediti
-
-Il prompt di pulizia del testo deriva da [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT, © OpenWhispr Team).
 
 ## Test
 
