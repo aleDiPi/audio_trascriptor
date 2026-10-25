@@ -56,4 +56,51 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\setup-windows.ps1"""; Components: devtools; StatusMsg: "Installo Rust e Visual Studio Build Tools (puo' richiedere diversi minuti)..."; Flags: waituntilterminated
-Filename: "{app}\trascrittore.exe"; Description: "Avvia Trascrittore audio"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\trascrittore.exe"; Description: "Avvia Trascrittore audio"; Flags: nowait postinstall
+
+[Code]
+var
+  TokenPage: TInputQueryWizardPage;
+
+procedure InitializeWizard;
+begin
+  TokenPage := CreateInputQueryPage(wpSelectTasks, 'Aggiornamenti automatici (facoltativo)',
+    'Token GitHub di sola lettura',
+    'Con un token GitHub "fine-grained" (solo lettura dei contenuti di aleDiPi/audio_trascriptor) il programma si aggiorna da solo. ' +
+    'Lascia il campo vuoto per aggiornare a mano scaricando il nuovo installer. Come crearlo: vedi il README. ' +
+    'Il token resta solo sul tuo PC (file .env), non e'' dentro il programma.');
+  TokenPage.Add('Token GitHub:', True);
+end;
+
+procedure SaveToken(Token: String);
+var
+  Path: String;
+  Lines: TArrayOfString;
+  I, N: Integer;
+  Found: Boolean;
+begin
+  Path := ExpandConstant('{userappdata}\Trascrittore\.env');
+  if not LoadStringsFromFile(Path, Lines) then
+    SetArrayLength(Lines, 0);
+  Found := False;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+    if Pos('TRASCRITTORE_UPDATE_TOKEN=', Trim(Lines[I])) = 1 then
+    begin
+      Lines[I] := 'TRASCRITTORE_UPDATE_TOKEN=' + Token;
+      Found := True;
+    end;
+  if not Found then
+  begin
+    N := GetArrayLength(Lines);
+    SetArrayLength(Lines, N + 1);
+    Lines[N] := 'TRASCRITTORE_UPDATE_TOKEN=' + Token;
+  end;
+  SaveStringsToFile(Path, Lines, False);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  { campo vuoto o installazione silenziosa (aggiornamento): il token gia' salvato non viene toccato }
+  if (CurStep = ssPostInstall) and (Trim(TokenPage.Values[0]) <> '') then
+    SaveToken(Trim(TokenPage.Values[0]));
+end;

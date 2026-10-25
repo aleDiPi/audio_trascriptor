@@ -1,7 +1,7 @@
 //! Finestra impostazioni (Win32 nativo, nessuna libreria grafica). Viene creata solo quando si clicca
 //! l'icona nella tray e distrutta alla chiusura: quando e' chiusa non occupa risorse.
 
-use crate::{config, groq, usage};
+use crate::{config, groq, release, updater, usage};
 use std::ptr::{null, null_mut};
 use std::sync::Mutex;
 use windows_sys::Win32::Foundation::*;
@@ -16,10 +16,17 @@ const ID_STATUS: i32 = 103;
 const ID_PROMPTS: i32 = 105;
 const ID_USAGE: i32 = 106;
 const ID_FOLDER: i32 = 107;
+const ID_TOKEN: i32 = 108;
+const ID_TOKEN_SAVE: i32 = 109;
+const ID_UPDATE: i32 = 110;
 const TIMER_USAGE: usize = 1;
 const WM_VERIFIED: u32 = WM_APP + 1;
+const WM_TOKEN_DONE: u32 = WM_APP + 2;
+const WM_UPDATE_INFO: u32 = WM_APP + 3;
 
 static RESULT: Mutex<Option<String>> = Mutex::new(None);
+static TOKEN_RESULT: Mutex<Option<String>> = Mutex::new(None);
+static UPDATE_INFO: Mutex<Option<String>> = Mutex::new(None);
 
 fn w(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -49,7 +56,7 @@ pub fn show() {
             lpszClassName: class.as_ptr(),
         };
         RegisterClassW(&wc); // 0 se gia' registrata: va bene
-        let (ww, wh) = (656, 740);
+        let (ww, wh) = (656, 830);
         let x = (GetSystemMetrics(SM_CXSCREEN) - ww) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - wh) / 2;
         let title = w("Trascrittore audio - Impostazioni");
@@ -103,18 +110,22 @@ unsafe fn build(hwnd: HWND) {
         None => "Nessuna chiave configurata. Incolla la chiave (https://console.groq.com/keys) e premi il pulsante.".into(),
     };
     child(hwnd, "STATIC", &status, 0, (16, 72, 608, 64), ID_STATUS);
+    child(hwnd, "STATIC", "Token GitHub per gli aggiornamenti automatici (facoltativo):", 0, (16, 140, 450, 18), 0);
+    child(hwnd, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 162, 470, 24), ID_TOKEN);
+    child(hwnd, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 160, 128, 28), ID_TOKEN_SAVE);
+    child(hwnd, "STATIC", &update_status_initial(), 0, (16, 194, 608, 48), ID_UPDATE);
     let info = format!(
-        "Modelli in uso (scelti come i predefiniti Groq di OpenWhispr):  trascrizione {}  |  AI {}",
+        "Modelli in uso (i predefiniti Groq di OpenWhispr):  trascrizione {}  |  AI {}",
         cfg.stt_model, cfg.llm_model
     );
-    child(hwnd, "STATIC", &info, 0, (16, 142, 608, 34), 0);
-    child(hwnd, "STATIC", "Utilizzo Groq (si aggiorna da solo):", 0, (16, 184, 400, 18), 0);
+    child(hwnd, "STATIC", &info, 0, (16, 248, 608, 34), 0);
+    child(hwnd, "STATIC", "Utilizzo Groq (si aggiorna da solo):", 0, (16, 288, 400, 18), 0);
     child(
         hwnd,
         "EDIT",
         &usage_text(),
         (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | WS_VSCROLL,
-        (16, 206, 608, 140),
+        (16, 310, 608, 130),
         ID_USAGE,
     );
     let fb = format!(
@@ -122,19 +133,59 @@ unsafe fn build(hwnd: HWND) {
         cfg.fallback_models.join(", "),
         cfg.stt_fallback_models.join(", ")
     );
-    child(hwnd, "STATIC", &fb, 0, (16, 354, 470, 34), 0);
-    child(hwnd, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 352, 128, 28), ID_FOLDER);
-    child(hwnd, "STATIC", "Prompt inviati all'AI, per ogni caso:", 0, (16, 394, 400, 18), 0);
+    child(hwnd, "STATIC", &fb, 0, (16, 448, 470, 34), 0);
+    child(hwnd, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 446, 128, 28), ID_FOLDER);
+    child(hwnd, "STATIC", "Prompt inviati all'AI, per ogni caso:", 0, (16, 488, 400, 18), 0);
     let report = cfg.prompt_report().replace("\r\n", "\n").replace('\n', "\r\n");
     child(
         hwnd,
         "EDIT",
         &report,
         (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | WS_VSCROLL | WS_TABSTOP,
-        (16, 416, 608, 272),
+        (16, 510, 608, 262),
         ID_PROMPTS,
     );
     SetTimer(hwnd, TIMER_USAGE, 3000, None);
+    check_update_in_background(hwnd);
+}
+
+/// "Versione 0.1.0 (build abc1234)" oppure "(build locale)".
+fn version_line() -> String {
+    let build = release::current_commit().map_or("build locale".to_string(), |c| format!("build {}", release::short(c)));
+    format!("Versione installata: {} ({build})", env!("CARGO_PKG_VERSION"))
+}
+
+fn update_status_initial() -> String {
+    if config::update_token().is_some() {
+        format!("{}\r\nAggiornamenti automatici: attivi. Controllo in corso...", version_line())
+    } else {
+        format!(
+            "{}\r\nAggiornamenti automatici: disattivati (nessun token). Per aggiornare scarica a mano il nuovo installer dalla pagina Release.",
+            version_line()
+        )
+    }
+}
+
+/// Se c'e' un token, chiede a GitHub se esiste una versione piu' recente (senza installarla).
+unsafe fn check_update_in_background(hwnd: HWND) {
+    let Some(token) = config::update_token() else { return };
+    let h = hwnd as usize;
+    std::thread::spawn(move || {
+        let text = match updater::fetch_latest(&token) {
+            Ok(r) if release::needs_update(release::current_commit(), &r.commit) => format!(
+                "{}\r\nAggiornamento disponibile ({}): verra' installato in automatico entro poche ore, oppure al prossimo avvio.",
+                version_line(),
+                release::short(&r.commit)
+            ),
+            Ok(_) if release::current_commit().is_none() => {
+                format!("{}\r\nBuild locale: gli aggiornamenti automatici non si applicano.", version_line())
+            }
+            Ok(_) => format!("{}\r\nSei aggiornato all'ultima versione.", version_line()),
+            Err(e) => format!("{}\r\nControllo aggiornamenti non riuscito: {e}", version_line()),
+        };
+        *UPDATE_INFO.lock().unwrap() = Some(text);
+        unsafe { PostMessageW(h as HWND, WM_UPDATE_INFO, 0, 0) };
+    });
 }
 
 fn usage_text() -> String {
@@ -150,6 +201,54 @@ unsafe fn get_text(h: HWND) -> String {
 
 unsafe fn set_text(h: HWND, s: &str) {
     SetWindowTextW(h, w(s).as_ptr());
+}
+
+unsafe fn on_token_save(hwnd: HWND) {
+    let typed = get_text(GetDlgItem(hwnd, ID_TOKEN)).trim().to_string();
+    EnableWindow(GetDlgItem(hwnd, ID_TOKEN_SAVE), 0);
+    set_text(GetDlgItem(hwnd, ID_UPDATE), "Verifica in corso...");
+    let h = hwnd as usize;
+    std::thread::spawn(move || {
+        let (msg, update) = verify_and_save_token(typed);
+        *TOKEN_RESULT.lock().unwrap() = Some(msg);
+        unsafe { PostMessageW(h as HWND, WM_TOKEN_DONE, 0, 0) };
+        if let Some(token) = update {
+            std::thread::sleep(std::time::Duration::from_secs(3)); // il tempo di leggere il messaggio
+            let _ = updater::check_and_apply(&token);
+        }
+    });
+}
+
+/// Prova il token su GitHub e, se funziona e ne e' stato scritto uno nuovo, lo salva in .env.
+/// Il secondo valore e' il token se c'e' un aggiornamento da installare subito.
+fn verify_and_save_token(typed: String) -> (String, Option<String>) {
+    let token = if typed.is_empty() {
+        match config::update_token() {
+            Some(t) => t,
+            None => return ("Inserisci il token GitHub (vedi README).".into(), None),
+        }
+    } else {
+        typed.clone()
+    };
+    if token.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return ("Il token non deve contenere spazi.".into(), None);
+    }
+    let rel = match updater::fetch_latest(&token) {
+        Ok(r) => r,
+        Err(e) => return (format!("Token NON valido o senza accesso alla release.\r\n{e}"), None),
+    };
+    let saved = !typed.is_empty();
+    if saved {
+        if let Err(e) = config::save_update_token(&token) {
+            return (format!("Il token funziona ma non e' stato possibile salvarlo: {e}"), None);
+        }
+    }
+    let head = format!("Token valido{}. Aggiornamenti automatici attivi.", if saved { " e salvato" } else { "" });
+    if release::needs_update(release::current_commit(), &rel.commit) {
+        (format!("{head}\r\nVersione online {} piu' recente: la scarico e riavvio il programma tra pochi secondi.", release::short(&rel.commit)), Some(token))
+    } else {
+        (format!("{head}\r\n{}\r\nSei gia' all'ultima versione.", version_line()), None)
+    }
 }
 
 unsafe fn on_save(hwnd: HWND) {
@@ -209,6 +308,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_COMMAND => {
             match (wp & 0xFFFF) as i32 {
                 ID_SAVE => on_save(hwnd),
+                ID_TOKEN_SAVE => on_token_save(hwnd),
                 ID_FOLDER => {
                     let _ = std::process::Command::new("explorer").arg(config::dir()).spawn();
                 }
@@ -234,6 +334,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 }
             }
             EnableWindow(GetDlgItem(hwnd, ID_SAVE), 1);
+            0
+        }
+        WM_TOKEN_DONE => {
+            if let Some(text) = TOKEN_RESULT.lock().unwrap().take() {
+                set_text(GetDlgItem(hwnd, ID_UPDATE), &text);
+                if text.starts_with("Token valido e salvato") {
+                    set_text(GetDlgItem(hwnd, ID_TOKEN), "");
+                }
+            }
+            EnableWindow(GetDlgItem(hwnd, ID_TOKEN_SAVE), 1);
+            0
+        }
+        WM_UPDATE_INFO => {
+            if let Some(text) = UPDATE_INFO.lock().unwrap().take() {
+                set_text(GetDlgItem(hwnd, ID_UPDATE), &text);
+            }
             0
         }
         WM_CLOSE => {

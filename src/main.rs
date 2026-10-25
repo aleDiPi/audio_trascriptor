@@ -26,6 +26,11 @@ mod hotkey;
 mod platform;
 #[cfg(any(windows, test))]
 #[cfg_attr(not(windows), allow(dead_code))]
+mod release;
+#[cfg(windows)]
+mod updater;
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
 mod usage;
 
 #[cfg(windows)]
@@ -61,8 +66,12 @@ mod app {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
     pub fn run() {
-        if !platform::single_instance() {
+        let after_update = std::env::args().any(|a| a == "--after-update");
+        if !platform::single_instance(after_update) {
             return;
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            let _ = std::fs::remove_file(exe.with_extension("exe.old")); // resto di un aggiornamento
         }
         let cfg = config::load();
         apply_hotkey(&cfg.hotkey);
@@ -78,6 +87,7 @@ mod app {
             })
         };
         hotkey::install(ev_tx.clone());
+        updater::start_background();
         std::thread::spawn({
             let notify = notify.clone();
             move || worker(ev_rx, notify)
@@ -189,6 +199,7 @@ mod app {
                         match audio::start(cfg.max_seconds) {
                             Ok(r) => {
                                 rec = Some((r, exe, title));
+                                updater::BUSY.store(true, std::sync::atomic::Ordering::Relaxed);
                                 notify(Ui::Recording, "Trascrittore - registrazione...".into());
                             }
                             Err(e) => {
@@ -214,16 +225,21 @@ mod app {
     ) {
         let Some((r, exe, title)) = rec.take() else { return };
         let Some(wav) = r.finish() else {
+            updater::BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
             notify(Ui::Idle, String::new());
             return;
         };
         notify(Ui::Working, "Trascrittore - elaborazione...".into());
         let (cfg, notify) = (cfg.clone(), notify.clone());
-        std::thread::spawn(move || match process(wav, &cfg, &exe, &title) {
-            Ok(()) => notify(Ui::Idle, String::new()),
-            Err(e) => {
-                config::log(&e);
-                notify(Ui::Error, format!("Trascrittore - {e}"));
+        std::thread::spawn(move || {
+            let result = process(wav, &cfg, &exe, &title);
+            updater::BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
+            match result {
+                Ok(()) => notify(Ui::Idle, String::new()),
+                Err(e) => {
+                    config::log(&e);
+                    notify(Ui::Error, format!("Trascrittore - {e}"));
+                }
             }
         });
     }

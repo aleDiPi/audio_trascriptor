@@ -177,9 +177,9 @@ pub fn load() -> Config {
     }
 }
 
-/// Chiave Groq: variabile d'ambiente GROQ_API_KEY oppure riga nel file .env.
-pub fn groq_key() -> Option<String> {
-    if let Ok(k) = std::env::var("GROQ_API_KEY") {
+/// Valore di una variabile: ambiente di Windows oppure riga NOME=valore nel file .env.
+fn env_value(name: &str) -> Option<String> {
+    if let Ok(k) = std::env::var(name) {
         if !k.trim().is_empty() {
             return Some(k.trim().to_string());
         }
@@ -191,7 +191,7 @@ pub fn groq_key() -> Option<String> {
             continue;
         }
         if let Some((k, v)) = line.split_once('=') {
-            if k.trim() == "GROQ_API_KEY" {
+            if k.trim() == name {
                 let v = v.trim().trim_matches('"').trim_matches('\'').trim();
                 if !v.is_empty() {
                     return Some(v.to_string());
@@ -202,16 +202,26 @@ pub fn groq_key() -> Option<String> {
     None
 }
 
-/// Sostituisce (o aggiunge) la riga GROQ_API_KEY in un testo .env, lasciando il resto invariato.
-pub fn set_env_key(text: &str, key: &str) -> String {
+/// Chiave Groq (GROQ_API_KEY).
+pub fn groq_key() -> Option<String> {
+    env_value("GROQ_API_KEY")
+}
+
+/// Token GitHub di sola lettura per gli aggiornamenti automatici (TRASCRITTORE_UPDATE_TOKEN).
+pub fn update_token() -> Option<String> {
+    env_value("TRASCRITTORE_UPDATE_TOKEN")
+}
+
+/// Sostituisce (o aggiunge) la riga NOME=valore in un testo .env, lasciando il resto invariato.
+pub fn set_env_value(text: &str, name: &str, value: &str) -> String {
     let mut out = Vec::new();
     let mut done = false;
     for line in text.lines() {
         let is_key = !line.trim_start().starts_with('#')
-            && line.split_once('=').map_or(false, |(k, _)| k.trim() == "GROQ_API_KEY");
+            && line.split_once('=').map_or(false, |(k, _)| k.trim() == name);
         if is_key {
             if !done {
-                out.push(format!("GROQ_API_KEY={key}"));
+                out.push(format!("{name}={value}"));
                 done = true;
             }
         } else {
@@ -219,19 +229,28 @@ pub fn set_env_key(text: &str, key: &str) -> String {
         }
     }
     if !done {
-        out.push(format!("GROQ_API_KEY={key}"));
+        out.push(format!("{name}={value}"));
     }
     out.join("\r\n") + "\r\n"
 }
 
-/// Salva la chiave in .env.
-pub fn save_groq_key(key: &str) -> std::io::Result<()> {
-    if key.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "chiave non valida"));
+fn save_env_value(name: &str, value: &str) -> std::io::Result<()> {
+    if value.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "valore non valido"));
     }
     let path = dir().join(".env");
     let old = std::fs::read_to_string(&path).unwrap_or_default();
-    std::fs::write(path, set_env_key(&old, key))
+    std::fs::write(path, set_env_value(&old, name, value))
+}
+
+/// Salva la chiave Groq in .env.
+pub fn save_groq_key(key: &str) -> std::io::Result<()> {
+    save_env_value("GROQ_API_KEY", key)
+}
+
+/// Salva il token degli aggiornamenti in .env.
+pub fn save_update_token(token: &str) -> std::io::Result<()> {
+    save_env_value("TRASCRITTORE_UPDATE_TOKEN", token)
 }
 
 /// "gsk_...abcd": mostra solo gli ultimi 4 caratteri.
@@ -348,10 +367,10 @@ mod tests {
 
     #[test]
     fn env_key_replace_and_append() {
-        assert_eq!(set_env_key("# nota\nGROQ_API_KEY=\nALTRO=1\n", "gsk_x"), "# nota\r\nGROQ_API_KEY=gsk_x\r\nALTRO=1\r\n");
-        assert_eq!(set_env_key("", "gsk_x"), "GROQ_API_KEY=gsk_x\r\n");
-        assert_eq!(set_env_key("ALTRO=1", "k"), "ALTRO=1\r\nGROQ_API_KEY=k\r\n");
-        assert_eq!(set_env_key("GROQ_API_KEY=a\nGROQ_API_KEY=b", "k"), "GROQ_API_KEY=k\r\n");
+        assert_eq!(set_env_value("# nota\nGROQ_API_KEY=\nALTRO=1\n", "GROQ_API_KEY", "gsk_x"), "# nota\r\nGROQ_API_KEY=gsk_x\r\nALTRO=1\r\n");
+        assert_eq!(set_env_value("", "GROQ_API_KEY", "gsk_x"), "GROQ_API_KEY=gsk_x\r\n");
+        assert_eq!(set_env_value("ALTRO=1", "GROQ_API_KEY", "k"), "ALTRO=1\r\nGROQ_API_KEY=k\r\n");
+        assert_eq!(set_env_value("GROQ_API_KEY=a\nGROQ_API_KEY=b", "GROQ_API_KEY", "k"), "GROQ_API_KEY=k\r\n");
     }
 
     #[test]
@@ -361,6 +380,12 @@ mod tests {
         assert!(c.llm_models().len() >= 2);
         assert_eq!(c.stt_models()[0], "whisper-large-v3-turbo");
         assert!(c.stt_models().contains(&"whisper-large-v3".to_string()));
+    }
+
+    #[test]
+    fn env_value_keeps_other_secrets() {
+        let t = set_env_value("GROQ_API_KEY=gsk_a\r\n", "TRASCRITTORE_UPDATE_TOKEN", "github_pat_x");
+        assert_eq!(t, "GROQ_API_KEY=gsk_a\r\nTRASCRITTORE_UPDATE_TOKEN=github_pat_x\r\n");
     }
 
     #[test]

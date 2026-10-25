@@ -38,4 +38,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag 2>$null; $global:LASTEXITCODE = 0
-          gh release create latest installer/Output/Trascrittore-Setup.exe --target $env:GITHUB_SHA --latest --title "Trascrittore audio - ultima versione" --notes "Installer costruito automaticamente da main (commit $env:GITHUB_SHA)."
+          $msg = git log -1 --pretty=%B | Out-String
+          $flag = if ($msg -match '\[installer\]') { ' [installer]' } else { '' }
+          Copy-Item target/release/trascrittore.exe trascrittore.exe
+          gh release create latest installer/Output/Trascrittore-Setup.exe trascrittore.exe --target $env:GITHUB_SHA --latest --title "Trascrittore audio - ultima versione" --notes "Build automatica da main (commit $env:GITHUB_SHA).$flag"
