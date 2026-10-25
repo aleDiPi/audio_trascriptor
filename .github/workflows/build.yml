@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -29,3 +31,11 @@ jobs:
             target/release/trascrittore.exe
             config/config.example.toml
             .env.example
+      - name: Pubblica release "latest" (solo su main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null; $global:LASTEXITCODE = 0
+          gh release create latest installer/Output/Trascrittore-Setup.exe --target $env:GITHUB_SHA --latest --title "Trascrittore audio - ultima versione" --notes "Installer costruito automaticamente da main (commit $env:GITHUB_SHA)."
