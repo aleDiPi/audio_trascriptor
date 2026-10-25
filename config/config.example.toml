@@ -24,6 +24,9 @@ stt_fallback_models = ["whisper-large-v3"]
 # Durata massima di una registrazione, in secondi
 max_seconds = 120
 
+# Aggiornamenti automatici (servono anche il token GitHub e l'installer: vedi README). Si cambia anche dalle Impostazioni.
+auto_update = true
+
 # Modalita' debug: scrive nel log ogni passaggio (hotkey, microfono, durata, app e regola, chiamate a Groq, modelli, incolla, aggiornamenti).
 # Non registra mai chiavi o token. Si attiva anche dal menu della tray o dalle Impostazioni. Il log e' trascrittore.log accanto a config.toml.
 debug = false

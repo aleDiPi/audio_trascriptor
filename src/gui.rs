@@ -21,6 +21,13 @@ const ID_TOKEN_SAVE: i32 = 109;
 const ID_UPDATE: i32 = 110;
 const ID_DEBUG: i32 = 111;
 const ID_OPENLOG: i32 = 112;
+const ID_GROQ_LINK: i32 = 113;
+const ID_GITHUB_LINK: i32 = 114;
+const ID_AUTOUPD: i32 = 115;
+const ID_TOKEN_CLEAR: i32 = 116;
+
+const GROQ_KEYS_URL: &str = "https://console.groq.com/keys";
+const GITHUB_TOKEN_URL: &str = "https://github.com/settings/personal-access-tokens/new";
 const TIMER_USAGE: usize = 1;
 const WM_VERIFIED: u32 = WM_APP + 1;
 const WM_TOKEN_DONE: u32 = WM_APP + 2;
@@ -58,7 +65,7 @@ pub fn show() {
             lpszClassName: class.as_ptr(),
         };
         RegisterClassW(&wc); // 0 se gia' registrata: va bene
-        let (ww, wh) = (656, 850);
+        let (ww, wh) = (656, 816);
         let x = (GetSystemMetrics(SM_CXSCREEN) - ww) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - wh) / 2;
         let title = w("Trascrittore audio - Impostazioni");
@@ -102,32 +109,62 @@ unsafe fn child(parent: HWND, class: &str, text: &str, style: u32, rect: (i32, i
     h
 }
 
+/// Testo informativo selezionabile e copiabile: casella di sola lettura senza bordo.
+unsafe fn info(parent: HWND, text: &str, rect: (i32, i32, i32, i32), id: i32) -> HWND {
+    let (c, t) = (w("EDIT"), w(text));
+    let h = CreateWindowExW(
+        0,
+        c.as_ptr(),
+        t.as_ptr(),
+        WS_CHILD | WS_VISIBLE | (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32,
+        rect.0,
+        rect.1,
+        rect.2,
+        rect.3,
+        parent,
+        id as usize as HMENU,
+        GetModuleHandleW(null()),
+        null(),
+    );
+    SendMessageW(h, WM_SETFONT, GetStockObject(DEFAULT_GUI_FONT) as usize, 1);
+    h
+}
+
+fn open_url(url: &str) {
+    let _ = std::process::Command::new("explorer").arg(url).spawn();
+}
+
 unsafe fn build(hwnd: HWND) {
     let cfg = config::load();
     child(hwnd, "STATIC", "Chiave API Groq:", 0, (16, 16, 300, 18), 0);
+    child(hwnd, "BUTTON", "Crea chiave Groq", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 10, 128, 24), ID_GROQ_LINK);
     child(hwnd, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 38, 470, 24), ID_KEY);
     child(hwnd, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 36, 128, 28), ID_SAVE);
     let status = match config::groq_key() {
         Some(k) => format!("Chiave salvata: {}. Per cambiarla scrivi quella nuova e premi il pulsante.", config::mask_key(&k)),
-        None => "Nessuna chiave configurata. Incolla la chiave (https://console.groq.com/keys) e premi il pulsante.".into(),
+        None => format!("Nessuna chiave configurata. Incolla la chiave ({GROQ_KEYS_URL}) e premi il pulsante."),
     };
-    child(hwnd, "STATIC", &status, 0, (16, 72, 608, 64), ID_STATUS);
-    child(hwnd, "STATIC", "Token GitHub per gli aggiornamenti automatici (facoltativo):", 0, (16, 140, 450, 18), 0);
-    child(hwnd, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 162, 470, 24), ID_TOKEN);
-    child(hwnd, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 160, 128, 28), ID_TOKEN_SAVE);
-    child(hwnd, "STATIC", &update_status_initial(), 0, (16, 194, 608, 48), ID_UPDATE);
-    let info = format!(
+    info(hwnd, &status, (16, 72, 608, 50), ID_STATUS);
+    let models = format!(
         "Modelli in uso:  trascrizione {}  |  AI {}",
         cfg.stt_model, cfg.llm_model
     );
-    child(hwnd, "STATIC", &info, 0, (16, 248, 608, 34), 0);
-    child(hwnd, "STATIC", "Utilizzo Groq (si aggiorna da solo):", 0, (16, 288, 400, 18), 0);
+    info(hwnd, &models, (16, 124, 608, 34), 0);
+    child(hwnd, "STATIC", "Token GitHub per gli aggiornamenti (incolla qui per inserirlo o cambiarlo):", 0, (16, 168, 470, 18), 0);
+    child(hwnd, "BUTTON", "Crea token GitHub", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 162, 128, 24), ID_GITHUB_LINK);
+    child(hwnd, "EDIT", "", (ES_PASSWORD | ES_AUTOHSCROLL) as u32 | WS_TABSTOP, (16, 190, 470, 24), ID_TOKEN);
+    child(hwnd, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 188, 128, 28), ID_TOKEN_SAVE);
+    let auto = child(hwnd, "BUTTON", "Aggiornamenti automatici attivi", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 224, 470, 22), ID_AUTOUPD);
+    SendMessageW(auto, BM_SETCHECK, config::auto_update_enabled() as usize, 0);
+    child(hwnd, "BUTTON", "Rimuovi token", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 221, 128, 28), ID_TOKEN_CLEAR);
+    info(hwnd, &update_status_initial(), (16, 252, 608, 80), ID_UPDATE);
+    child(hwnd, "STATIC", "Utilizzo Groq (si aggiorna da solo):", 0, (16, 338, 400, 18), 0);
     child(
         hwnd,
         "EDIT",
         &usage_text(),
         (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | WS_VSCROLL,
-        (16, 310, 608, 130),
+        (16, 360, 608, 90),
         ID_USAGE,
     );
     let fb = format!(
@@ -135,20 +172,20 @@ unsafe fn build(hwnd: HWND) {
         cfg.fallback_models.join(", "),
         cfg.stt_fallback_models.join(", ")
     );
-    child(hwnd, "STATIC", &fb, 0, (16, 448, 470, 34), 0);
-    child(hwnd, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 446, 128, 28), ID_FOLDER);
-    let dbg = child(hwnd, "BUTTON", "Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 490, 470, 22), ID_DEBUG);
+    info(hwnd, &fb, (16, 458, 470, 34), 0);
+    child(hwnd, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 456, 128, 28), ID_FOLDER);
+    let dbg = child(hwnd, "BUTTON", "Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 500, 470, 22), ID_DEBUG);
     SendMessageW(dbg, BM_SETCHECK, config::debug_enabled() as usize, 0);
-    child(hwnd, "BUTTON", "Apri log", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 487, 128, 28), ID_OPENLOG);
-    child(hwnd, "STATIC", &format!("Log: {}", config::log_path().display()), 0, (16, 518, 608, 18), 0);
-    child(hwnd, "STATIC", "Prompt inviati all'AI, per ogni caso:", 0, (16, 542, 400, 18), 0);
+    child(hwnd, "BUTTON", "Apri log", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 497, 128, 28), ID_OPENLOG);
+    info(hwnd, &format!("Log: {}", config::log_path().display()), (16, 528, 608, 18), 0);
+    child(hwnd, "STATIC", "Prompt inviati all'AI, per ogni caso:", 0, (16, 552, 400, 18), 0);
     let report = cfg.prompt_report().replace("\r\n", "\n").replace('\n', "\r\n");
     child(
         hwnd,
         "EDIT",
         &report,
         (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | WS_VSCROLL | WS_TABSTOP,
-        (16, 564, 608, 222),
+        (16, 574, 608, 170),
         ID_PROMPTS,
     );
     SetTimer(hwnd, TIMER_USAGE, 3000, None);
@@ -162,11 +199,14 @@ fn version_line() -> String {
 }
 
 fn update_status_initial() -> String {
-    if config::update_token().is_some() {
-        format!("{}\r\nAggiornamenti automatici: attivi. Controllo in corso...", version_line())
+    if let Some(t) = config::update_token() {
+        if !config::auto_update_enabled() {
+            return format!("{}\r\nToken salvato: {}. Aggiornamenti automatici DISATTIVATI: spunta la casella per riattivarli.", version_line(), config::mask_key(&t));
+        }
+        format!("{}\r\nToken salvato: {}. Aggiornamenti automatici attivi. Controllo in corso...", version_line(), config::mask_key(&t))
     } else {
         format!(
-            "{}\r\nAggiornamenti automatici: disattivati (nessun token). Per aggiornare scarica a mano il nuovo installer dalla pagina Release.",
+            "{}\r\nNessun token salvato: aggiornamenti automatici non disponibili. Incolla un token qui sopra (\"Crea token GitHub\" apre la pagina), oppure scarica a mano il nuovo installer dalla pagina Release.",
             version_line()
         )
     }
@@ -175,6 +215,9 @@ fn update_status_initial() -> String {
 /// Se c'e' un token, chiede a GitHub se esiste una versione piu' recente (senza installarla).
 unsafe fn check_update_in_background(hwnd: HWND) {
     let Some(token) = config::update_token() else { return };
+    if !config::auto_update_enabled() {
+        return;
+    }
     let h = hwnd as usize;
     std::thread::spawn(move || {
         let text = match updater::fetch_latest(&token) {
@@ -241,7 +284,7 @@ fn verify_and_save_token(typed: String) -> (String, Option<String>) {
     }
     let rel = match updater::fetch_latest(&token) {
         Ok(r) => r,
-        Err(e) => return (format!("Token NON valido o senza accesso alla release.\r\n{e}"), None),
+        Err(e) => return (format!("Token non utilizzabile.\r\n{e}"), None),
     };
     let saved = !typed.is_empty();
     if saved {
@@ -250,7 +293,9 @@ fn verify_and_save_token(typed: String) -> (String, Option<String>) {
         }
     }
     let head = format!("Token valido{}. Aggiornamenti automatici attivi.", if saved { " e salvato" } else { "" });
-    if release::needs_update(release::current_commit(), &rel.commit) {
+    if release::needs_update(release::current_commit(), &rel.commit) && !config::auto_update_enabled() {
+        (format!("{head}\r\nC'e' una versione piu' recente ({}), ma gli aggiornamenti automatici sono disattivati: spunta la casella per installarla.", release::short(&rel.commit)), None)
+    } else if release::needs_update(release::current_commit(), &rel.commit) {
         (format!("{head}\r\nVersione online {} piu' recente: la scarico e riavvio il programma tra pochi secondi.", release::short(&rel.commit)), Some(token))
     } else {
         (format!("{head}\r\n{}\r\nSei gia' all'ultima versione.", version_line()), None)
@@ -316,6 +361,21 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 ID_SAVE => on_save(hwnd),
                 ID_TOKEN_SAVE => on_token_save(hwnd),
                 ID_OPENLOG => config::open_log(),
+                ID_GROQ_LINK => open_url(GROQ_KEYS_URL),
+                ID_AUTOUPD => {
+                    let on = SendMessageW(GetDlgItem(hwnd, ID_AUTOUPD), BM_GETCHECK, 0, 0) == 1;
+                    config::set_auto_update(on);
+                    set_text(GetDlgItem(hwnd, ID_UPDATE), &update_status_initial());
+                    check_update_in_background(hwnd);
+                }
+                ID_TOKEN_CLEAR => {
+                    let msg = match config::clear_update_token() {
+                        Ok(()) => update_status_initial(),
+                        Err(e) => format!("Impossibile rimuovere il token: {e}"),
+                    };
+                    set_text(GetDlgItem(hwnd, ID_UPDATE), &msg);
+                }
+                ID_GITHUB_LINK => open_url(GITHUB_TOKEN_URL),
                 ID_DEBUG => {
                     let on = SendMessageW(GetDlgItem(hwnd, ID_DEBUG), BM_GETCHECK, 0, 0) == 1;
                     config::set_debug(on);
@@ -331,6 +391,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             if wp == TIMER_USAGE {
                 // tiene allineata la casella con il menu della tray
                 SendMessageW(GetDlgItem(hwnd, ID_DEBUG), BM_SETCHECK, config::debug_enabled() as usize, 0);
+                SendMessageW(GetDlgItem(hwnd, ID_AUTOUPD), BM_SETCHECK, config::auto_update_enabled() as usize, 0);
                 let h = GetDlgItem(hwnd, ID_USAGE);
                 let t = usage_text();
                 if get_text(h) != t {
@@ -364,6 +425,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 set_text(GetDlgItem(hwnd, ID_UPDATE), &text);
             }
             0
+        }
+        WM_CTLCOLORSTATIC => {
+            // le caselle di sola lettura (testo selezionabile) hanno lo stesso sfondo bianco della finestra
+            SetBkColor(wp as HDC, GetSysColor(COLOR_WINDOW));
+            GetSysColorBrush(COLOR_WINDOW) as LRESULT
         }
         WM_CLOSE => {
             KillTimer(hwnd, TIMER_USAGE);

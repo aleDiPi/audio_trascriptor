@@ -58,6 +58,34 @@ pub fn parse_release(json: &str) -> Result<Release, String> {
     })
 }
 
+/// Messaggio d'errore per una risposta non riuscita di GitHub. Su un repository privato GitHub risponde 404
+/// anche quando il token non ha accesso: per distinguere i casi si guarda se il token vede il repository
+/// (`repo_status` = esito di GET /repos/aleDiPi/audio_trascriptor con lo stesso token, se e' stato provato).
+pub fn explain_github_failure(status: u16, repo_status: Option<u16>, api_message: &str) -> String {
+    let detail = if api_message.is_empty() { String::new() } else { format!(" (GitHub: \"{api_message}\")") };
+    let no_access = "Il token non vede il repository aleDiPi/audio_trascriptor: nella pagina di creazione controlla \
+        Resource owner = aleDiPi, Repository access = solo audio_trascriptor e Permissions > Contents = Read-only.";
+    match (status, repo_status) {
+        (401, _) | (404 | 403, Some(401)) => format!("GitHub non accetta il token (errato, revocato o scaduto){detail}."),
+        (404, Some(200)) => format!(
+            "Il token e' valido e vede il repository, ma la release \"latest\" non c'e' in questo momento: \
+             viene ricreata a ogni aggiornamento e ci mette un paio di minuti, riprova piu' tardi{detail}."
+        ),
+        (404 | 403, Some(404 | 403)) => format!("{no_access}{detail}"),
+        (403, _) => format!("GitHub nega l'accesso (permessi insufficienti o troppe richieste){detail}."),
+        (404, None) => format!("GitHub HTTP 404: release non trovata oppure token senza accesso al repository{detail}."),
+        (s, _) => format!("GitHub HTTP {s}{detail}."),
+    }
+}
+
+/// Testo del campo "message" di una risposta d'errore di GitHub ("" se assente).
+pub fn api_message(body: &str) -> String {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| v["message"].as_str().map(|m| m.chars().take(120).collect()))
+        .unwrap_or_default()
+}
+
 /// Una build locale (senza commit noto) non si aggiorna mai.
 pub fn needs_update(current: Option<&str>, remote: &str) -> bool {
     current.map_or(false, |c| !c.eq_ignore_ascii_case(remote))
@@ -151,5 +179,27 @@ mod tests {
     fn writable_dir_detection() {
         assert!(dir_writable(&std::env::temp_dir()));
         assert!(!dir_writable(&std::env::temp_dir().join("trascrittore-cartella-inesistente-xyz")));
+    }
+
+    #[test]
+    fn explains_404_depending_on_repo_access() {
+        // il token vede il repository: la release manca (e' in ricostruzione)
+        let m = explain_github_failure(404, Some(200), "Not Found");
+        assert!(m.contains("valido") && m.contains("riprova"), "{m}");
+        // il token non vede il repository: problema di permessi, non di scadenza
+        let m = explain_github_failure(404, Some(404), "Not Found");
+        assert!(m.contains("Resource owner") && m.contains("Contents") && !m.contains("scaduto"), "{m}");
+        // token rifiutato
+        assert!(explain_github_failure(401, None, "Bad credentials").contains("scaduto"));
+        assert!(explain_github_failure(404, Some(401), "").contains("scaduto"));
+        // sonda non eseguita
+        assert!(explain_github_failure(404, None, "").contains("404"));
+        assert!(explain_github_failure(500, None, "").contains("500"));
+    }
+
+    #[test]
+    fn extracts_github_message() {
+        assert_eq!(api_message(r#"{"message":"Not Found","status":"404"}"#), "Not Found");
+        assert_eq!(api_message("non json"), "");
     }
 }

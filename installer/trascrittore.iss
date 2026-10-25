@@ -133,6 +133,83 @@ begin
     '7. Incollalo nel campo qui sopra. Puoi anche farlo dopo dalle Impostazioni del programma (clic sull''icona nella tray).';
 end;
 
+{ Esito HTTP di una GET su api.github.com con il token (0 = rete non raggiungibile) }
+function GitHubStatus(Url, Token: String): Integer;
+var
+  Req: Variant;
+begin
+  Result := 0;
+  try
+    Req := CreateOleObject('WinHttp.WinHttpRequest.5.1');
+    Req.Open('GET', Url, False);
+    Req.SetRequestHeader('User-Agent', 'trascrittore-installer');
+    Req.SetRequestHeader('Accept', 'application/vnd.github+json');
+    Req.SetRequestHeader('Authorization', 'Bearer ' + Token);
+    Req.SetTimeouts(5000, 5000, 10000, 10000);
+    Req.Send('');
+    Result := Req.Status;
+  except
+    Result := 0;
+  end;
+end;
+
+{ '' = token utilizzabile, altrimenti il motivo }
+function CheckToken(Token: String): String;
+var
+  Release, Repo: Integer;
+begin
+  Result := '';
+  if (Pos(' ', Token) > 0) or (Pos(#9, Token) > 0) then
+  begin
+    Result := 'Il token non deve contenere spazi.';
+    exit;
+  end;
+  Release := GitHubStatus('https://api.github.com/repos/aleDiPi/audio_trascriptor/releases/tags/latest', Token);
+  if Release = 200 then exit;
+  if Release = 0 then
+  begin
+    Result := 'Non riesco a collegarmi a GitHub (rete assente o bloccata): il token non e'' stato verificato.';
+    exit;
+  end;
+  if Release = 401 then
+  begin
+    Result := 'GitHub non accetta il token (errato, revocato o scaduto).';
+    exit;
+  end;
+  if (Release = 404) or (Release = 403) then
+  begin
+    Repo := GitHubStatus('https://api.github.com/repos/aleDiPi/audio_trascriptor', Token);
+    if Repo = 200 then exit; { il token vede il repository: la release "latest" e'' in ricostruzione, va bene }
+    if Repo = 401 then
+      Result := 'GitHub non accetta il token (errato, revocato o scaduto).'
+    else
+      Result := 'Il token non vede il repository aleDiPi/audio_trascriptor. Controlla: Resource owner = aleDiPi, Repository access = solo audio_trascriptor, Permissions > Contents = Read-only.';
+    exit;
+  end;
+  Result := 'GitHub ha risposto con errore HTTP ' + IntToStr(Release) + '.';
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  Token, Reason: String;
+begin
+  Result := True;
+  if CurPageID <> TokenPage.ID then exit;
+  Token := Trim(TokenPage.Values[0]);
+  if Token = '' then exit;
+  WizardForm.NextButton.Enabled := False;
+  try
+    Reason := CheckToken(Token);
+  finally
+    WizardForm.NextButton.Enabled := True;
+  end;
+  if Reason = '' then exit;
+  if MsgBox(Reason + #13#10#13#10 + 'Si = correggi il token' + #13#10 + 'No = continua senza token (aggiornamenti manuali)', mbError, MB_YESNO) = IDYES then
+    Result := False
+  else
+    TokenPage.Values[0] := '';
+end;
+
 procedure SaveToken(Token: String);
 var
   Path: String;
