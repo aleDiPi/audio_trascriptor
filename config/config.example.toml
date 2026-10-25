@@ -37,6 +37,12 @@ anthropic_llm_model = "claude-haiku-5-5"
 # Icona in basso a destra mentre tieni premuta la scorciatoia: mostra l'app dove verra' incollato il testo, con un alone che segue il volume. Si cambia anche dalle Impostazioni.
 overlay = true
 
+# Suono breve quando la registrazione inizia e quando finisce (si cambiano anche dalle Impostazioni).
+# sound_style: "soft" (due note morbide), "click" (un colpetto) o "chime" (campanello). sound_volume: da 0 a 100.
+sounds = true
+sound_volume = 40
+sound_style = "soft"
+
 # Modalita' debug: scrive nel log ogni passaggio (hotkey, microfono, durata, app e regola, chiamate a Groq, modelli, incolla, aggiornamenti).
 # Non registra mai chiavi o token. Si attiva anche dal menu della tray o dalle Impostazioni. Il log e' trascrittore.log accanto a config.toml.
 debug = false

@@ -32,6 +32,8 @@ mod hotkey;
 mod levels;
 #[cfg(windows)]
 mod overlay;
+#[cfg(windows)]
+mod sounds;
 #[cfg(any(windows, test))]
 #[cfg_attr(not(windows), allow(dead_code))]
 mod trayicon;
@@ -222,7 +224,10 @@ mod app {
                     } else {
                         let (exe, title) = platform::foreground_app();
                         config::debug(|| format!("app in primo piano: '{exe}', titolo '{title}'"));
-                        match audio::start(cfg.max_seconds) {
+                        // il suono d'avvio non deve finire nella registrazione: si scartano i suoi millisecondi
+                        let played = sounds::play(sounds::Kind::Start);
+                        let skip_ms = if played > 0 { played + 120 } else { 0 };
+                        match audio::start(cfg.max_seconds, skip_ms) {
                             Ok(r) => {
                                 rec = Some((r, exe, title));
                                 updater::BUSY.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -252,7 +257,9 @@ mod app {
         notify: &Arc<dyn Fn(Ui, String) + Send + Sync>,
     ) {
         let Some((r, exe, title)) = rec.take() else { return };
-        let Some(wav) = r.finish() else {
+        let wav = r.finish(); // il microfono e' gia' chiuso: il suono di fine non viene registrato
+        sounds::play(sounds::Kind::End);
+        let Some(wav) = wav else {
             updater::BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
             overlay::hide();
             notify(Ui::Idle, String::new());

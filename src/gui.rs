@@ -3,7 +3,7 @@
 //! distrutta alla chiusura, quindi da chiusa resta solo un thread in attesa (nessuna CPU).
 
 use crate::providers::{self, Provider};
-use crate::{anthropic, config, oai, release, updater, usage};
+use crate::{anthropic, config, oai, release, sounds, updater, usage};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
 use std::sync::{Condvar, Mutex, Once};
@@ -93,6 +93,10 @@ fn create_window() -> Result<Ui, slint::PlatformError> {
     win.set_tiles(ModelRc::new(VecModel::<Tile>::default()));
     win.set_ver_info(update_info_initial().into());
     win.set_token_status(token_status().into());
+    // i controlli dei suoni si impostano solo qui: aggiornarli col timer sposterebbe il cursore mentre lo si trascina
+    win.set_sounds(config::sounds_enabled());
+    win.set_sound_volume(config::sound_volume() as f32);
+    win.set_sound_style_index(style_index(&config::sound_style()));
     refresh(&win);
     wire(&win);
 
@@ -254,6 +258,12 @@ fn home_usage(order: &[Provider], status: impl Fn(Provider) -> (bool, String), u
         .join("\n")
 }
 
+/// Posizione di uno stile nell'elenco a discesa dei suoni.
+fn style_index(id: &str) -> i32 {
+    let style = sounds::Style::parse(id);
+    sounds::STYLES.iter().position(|s| *s == style).unwrap_or(0) as i32
+}
+
 /// Esito di una verifica chiave: per ogni modello atteso dice se l'account lo vede.
 fn model_lines(wanted: &[&str], ids: &[String]) -> Vec<String> {
     wanted
@@ -384,6 +394,26 @@ fn wire(win: &SettingsWindow) {
     });
 
     win.on_toggle_overlay(config::set_overlay);
+    win.on_toggle_sounds(config::set_sounds);
+    win.on_set_sound_style(|i| {
+        let style = sounds::STYLES.get(i.max(0) as usize).copied().unwrap_or(sounds::Style::Soft);
+        config::set_sound_style(style.id());
+        sounds::play_with(sounds::Kind::Start, style, config::sound_volume());
+    });
+    win.on_set_sound_volume(|v| {
+        config::set_sound_volume(v as i64);
+        sounds::play_with(sounds::Kind::Start, sounds::Style::parse(&config::sound_style()), config::sound_volume());
+    });
+    win.on_preview_sound(|| {
+        // inizio e poi fine, con le impostazioni attuali
+        let style = sounds::Style::parse(&config::sound_style());
+        let vol = config::sound_volume();
+        sounds::play_with(sounds::Kind::Start, style, vol);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(sounds::duration_ms(sounds::Kind::Start, style) as u64 + 500));
+            sounds::play_with(sounds::Kind::End, style, vol);
+        });
+    });
     win.on_toggle_debug({
         let weak = weak.clone();
         move |on| {
@@ -811,6 +841,12 @@ mod tests {
             |_| "Dall'avvio: 2 chiamate, 10 token. Il credito residuo non e' leggibile via API.".into(),
         );
         assert_eq!(r, "Groq: Pronto  -  Dall'avvio: 2 chiamate, 10 token\nOpenAI: Nessuna chiave  -  Dall'avvio: 2 chiamate, 10 token");
+    }
+
+    #[test]
+    fn sound_style_index_matches_the_dropdown_order() {
+        assert_eq!((style_index("soft"), style_index("click"), style_index("chime")), (0, 1, 2));
+        assert_eq!(style_index("boh"), 0);
     }
 
     #[test]

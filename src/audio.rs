@@ -13,7 +13,14 @@ pub struct Recorder {
     rate: u32,
 }
 
-pub fn start(max_seconds: u32) -> Result<Recorder, String> {
+/// Quanti campioni scartare all'inizio per non registrare il suono d'avvio (piu' un piccolo margine
+/// per la latenza degli altoparlanti).
+pub fn frames_to_skip(rate: u32, skip_ms: u32) -> usize {
+    (rate as u64 * skip_ms as u64 / 1000) as usize
+}
+
+/// `skip_ms`: durata iniziale da scartare (il suono d'avvio); 0 per non scartare nulla.
+pub fn start(max_seconds: u32, skip_ms: u32) -> Result<Recorder, String> {
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or("nessun microfono predefinito")?;
     let cfg = device.default_input_config().map_err(|e| e.to_string())?;
@@ -21,13 +28,14 @@ pub fn start(max_seconds: u32) -> Result<Recorder, String> {
     let rate: u32 = cfg.sample_rate().into();
     let channels = cfg.channels() as usize;
     let max = rate as usize * max_seconds as usize;
+    let skip = frames_to_skip(rate, skip_ms);
     let buf = Arc::new(Mutex::new(Vec::with_capacity(rate as usize * 10)));
     let config = cfg.config();
     let stream = match cfg.sample_format() {
-        cpal::SampleFormat::F32 => build::<f32>(&device, &config, &buf, channels, max),
-        cpal::SampleFormat::I16 => build::<i16>(&device, &config, &buf, channels, max),
-        cpal::SampleFormat::U16 => build::<u16>(&device, &config, &buf, channels, max),
-        cpal::SampleFormat::I32 => build::<i32>(&device, &config, &buf, channels, max),
+        cpal::SampleFormat::F32 => build::<f32>(&device, &config, &buf, channels, max, skip),
+        cpal::SampleFormat::I16 => build::<i16>(&device, &config, &buf, channels, max, skip),
+        cpal::SampleFormat::U16 => build::<u16>(&device, &config, &buf, channels, max, skip),
+        cpal::SampleFormat::I32 => build::<i32>(&device, &config, &buf, channels, max, skip),
         f => Err(format!("formato audio non supportato: {f:?}")),
     }?;
     stream.play().map_err(|e| e.to_string())?;
@@ -40,12 +48,14 @@ fn build<T>(
     buf: &Arc<Mutex<Vec<f32>>>,
     channels: usize,
     max: usize,
+    skip: usize,
 ) -> Result<cpal::Stream, String>
 where
     T: SizedSample,
     f32: FromSample<T>,
 {
     let buf = Arc::clone(buf);
+    let mut skip_left = skip;
     device
         .build_input_stream(
             config.clone(),
@@ -53,6 +63,10 @@ where
                 let mut b = buf.lock().unwrap();
                 let (mut energy, mut n) = (0f32, 0usize);
                 for frame in data.chunks(channels) {
+                    if skip_left > 0 {
+                        skip_left -= 1;
+                        continue;
+                    }
                     if b.len() >= max {
                         break;
                     }
@@ -121,4 +135,16 @@ fn resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
             a + (b - a) * frac
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skip_frames_follow_rate_and_duration() {
+        assert_eq!(frames_to_skip(48_000, 200), 9_600);
+        assert_eq!(frames_to_skip(16_000, 0), 0);
+        assert_eq!(frames_to_skip(44_100, 1000), 44_100);
+    }
 }

@@ -89,12 +89,16 @@ Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) a
 1. **Home**: riepilogo all'apertura: modello AI e di trascrizione che risponderanno ora, servizi in ordine di priorita' e se hanno la chiave, scorciatoia, versione e aggiornamenti, utilizzo dall'avvio.
 2. **AI**: una tessera per servizio (Groq, OpenAI, Anthropic). Ogni tessera mostra stato (pronto, in pausa e perche', nessuna chiave), chiave (**Verifica e salva**, **Rimuovi**, **Crea chiave**; si vedono solo le ultime 4 cifre; salvata in `.env`), modelli, contatori dall'avvio e il link alla pagina del credito (nessuno dei tre lo espone via API). **Trascina** le tessere con la maniglia a sinistra per cambiare la priorita' (`providers` in `config.toml`); la casella *Usa* esclude un servizio. Se un servizio finisce i crediti o rifiuta la chiave si passa al successivo; per Groq anche ai modelli di riserva (`fallback_models`, `stt_fallback_models`) con i limiti letti dagli header.
 3. **Prompt**: i prompt completi inviati all'AI, scelti da un elenco per tipo di applicazione (app non riconosciuta e ogni regola `[[apps]]`, con il nome dato da `name`).
-4. **Impostazioni**: icona con alone (`overlay`) e apertura della cartella di configurazione.
+4. **Impostazioni**: icona con alone (`overlay`), **suoni** di inizio e fine registrazione (attivi/spenti, tipo *Morbido*, *Click* o *Campanello*, volume, pulsante *Prova*; `sounds`, `sound_style`, `sound_volume` in `config.toml`) e apertura della cartella di configurazione.
 5. **Info**: versione, aggiornamenti automatici (**Verifica aggiornamenti**, **Aggiorna ora**), token GitHub (**Verifica e salva**, **Rimuovi token**, **Crea token**), modalita' debug, testo dettato nel log (`debug_log_text`), apertura del log, percorsi e descrizione del programma.
 
 L'exe ha un manifest con DPI per monitor (`assets/app.manifest`): senza, Windows ingrandisce le finestre come immagini e il testo risulta sfocato. L'icona con alone resta non scalata dal sistema, come prima.
 
 I testi sono selezionabili e copiabili.
+
+## Suoni
+
+Un suono breve (meno di 0,25 s) segnala l'inizio e un altro la fine della registrazione. Sono toni sintetizzati in memoria (nessun file) e suonati da Windows in modo asincrono. Non finiscono nella registrazione: all'inizio il programma scarta i primi istanti dell'audio (durata del suono piu' un margine), alla fine il microfono e' gia' chiuso quando il suono parte. Quindi comincia a parlare dopo il suono. Si regolano in Impostazioni o con `sounds`, `sound_style` (`soft`, `click`, `chime`) e `sound_volume` (0-100) in `config.toml`.
 
 ## Configurazione (`config.toml`)
 

@@ -1,5 +1,5 @@
 // Finestra Impostazioni: barra laterale a sinistra, Home all'apertura. Stile Fluent, DPI nativo.
-import { Button, CheckBox, ComboBox, LineEdit, ScrollView, TextEdit, Palette } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, ScrollView, Slider, TextEdit, Palette } from "std-widgets.slint";
 
 component NavItem inherits Rectangle {
     in property <string> label;
@@ -283,6 +283,9 @@ export component SettingsWindow inherits Window {
     in-out property <bool> overlay;
     in-out property <bool> debug;
     in-out property <bool> debug-text;
+    in-out property <bool> sounds;
+    in property <int> sound-style-index;
+    in-out property <float> sound-volume;
     in property <string> upd-result;
     in property <bool> upd-busy;
     in property <string> log-line;
@@ -309,6 +312,10 @@ export component SettingsWindow inherits Window {
     callback toggle-debug-text(bool);
     callback check-update();
     callback apply-update();
+    callback toggle-sounds(bool);
+    callback set-sound-style(int);
+    callback set-sound-volume(int);
+    callback preview-sound();
     callback open-log();
     callback open-folder();
     callback select-prompt(int);
@@ -454,6 +461,33 @@ export component SettingsWindow inherits Window {
                     Title { text: "Impostazioni"; }
                     Card { title: "Durante la dettatura";
                         CheckBox { text: "Mostra l'icona con l'alone sonoro in basso a destra"; checked: root.overlay; toggled => { root.toggle-overlay(self.checked); } }
+                    }
+                    Card { title: "Suoni";
+                        CheckBox { text: "Suono quando la registrazione inizia e quando finisce"; checked: root.sounds; toggled => { root.toggle-sounds(self.checked); } }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Text { text: "Tipo"; vertical-alignment: center; color: Palette.foreground; font-size: 13px; }
+                            ComboBox {
+                                model: ["Morbido", "Click", "Campanello"];
+                                current-index: root.sound-style-index;
+                                enabled: root.sounds;
+                                selected(_) => { root.set-sound-style(self.current-index); }
+                            }
+                            Button { text: "Prova"; clicked => { root.preview-sound(); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Text { text: "Volume"; vertical-alignment: center; color: Palette.foreground; font-size: 13px; }
+                            vol := Slider {
+                                minimum: 0;
+                                maximum: 100;
+                                value: root.sound-volume;
+                                enabled: root.sounds;
+                                released(v) => { root.set-sound-volume(Math.round(v)); }
+                            }
+                            Text { text: Math.round(vol.value) + "%"; width: 40px; vertical-alignment: center; color: Palette.foreground; font-size: 13px; }
+                        }
+                        Note { text: "I suoni sono brevi e non finiscono nella registrazione: all'inizio si scartano i primi istanti, alla fine il microfono e' gia' chiuso."; }
                     }
                     Card { title: "Configurazione";
                         Note { text: "Scorciatoia, lingua, modelli di Groq e prompt si cambiano in config.toml, poi \"Ricarica configurazione\" dal menu dell'icona."; }

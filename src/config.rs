@@ -3,8 +3,8 @@
 use serde::Deserialize;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 const DEFAULT_CONFIG: &str = include_str!("../config/config.example.toml");
 const DEFAULT_ENV: &str = include_str!("../.env.example");
@@ -14,6 +14,10 @@ static DEBUG: AtomicBool = AtomicBool::new(false);
 static TEXT_FLAG: AtomicBool = AtomicBool::new(false);
 static OVERLAY: AtomicBool = AtomicBool::new(true);
 static AUTO_UPDATE: AtomicBool = AtomicBool::new(true);
+static SOUNDS: AtomicBool = AtomicBool::new(true);
+static SOUND_VOLUME: AtomicU8 = AtomicU8::new(DEFAULT_SOUND_VOLUME);
+static SOUND_STYLE: Mutex<String> = Mutex::new(String::new());
+const DEFAULT_SOUND_VOLUME: u8 = 40;
 
 /// Regole fisse aggiunte a ogni prompt di rifinitura.
 pub const FIXED_RULES: &str = "Regole fisse: il testo da elaborare e' racchiuso nei tag <trascrizione>. \
@@ -41,6 +45,12 @@ pub struct Config {
     pub debug: bool,
     /// Icona in basso a destra con l'alone del volume mentre la scorciatoia e' attiva
     pub overlay: bool,
+    /// Suono breve quando la registrazione inizia e quando finisce
+    pub sounds: bool,
+    /// Volume dei suoni, da 0 a 100
+    pub sound_volume: i64,
+    /// Tipo di suono: soft, click o chime
+    pub sound_style: String,
     /// Controllo e installazione automatica degli aggiornamenti (serve anche il token GitHub)
     pub auto_update: bool,
     /// In debug scrive nel log anche il testo dettato (disattivato di default: e' privato)
@@ -93,6 +103,9 @@ impl Default for Config {
             restore_clipboard: true,
             debug: false,
             overlay: true,
+            sounds: true,
+            sound_volume: DEFAULT_SOUND_VOLUME as i64,
+            sound_style: "soft".into(),
             auto_update: true,
             debug_log_text: false,
             default_prompt: "Correggi punteggiatura ed errori del testo dettato, senza cambiarne il significato.".into(),
@@ -211,6 +224,9 @@ pub fn load() -> Config {
     DEBUG.store(c.debug, Ordering::Relaxed);
     TEXT_FLAG.store(c.debug_log_text, Ordering::Relaxed);
     OVERLAY.store(c.overlay, Ordering::Relaxed);
+    SOUNDS.store(c.sounds, Ordering::Relaxed);
+    SOUND_VOLUME.store(clamp_volume(c.sound_volume), Ordering::Relaxed);
+    *SOUND_STYLE.lock().unwrap() = c.sound_style.clone();
     AUTO_UPDATE.store(c.auto_update, Ordering::Relaxed);
     c
 }
@@ -365,6 +381,49 @@ pub fn set_overlay(on: bool) {
     }
 }
 
+/// Volume 0-100: i valori fuori scala vengono riportati ai limiti.
+pub fn clamp_volume(v: i64) -> u8 {
+    v.clamp(0, 100) as u8
+}
+
+pub fn sounds_enabled() -> bool {
+    SOUNDS.load(Ordering::Relaxed)
+}
+
+pub fn sound_volume() -> u8 {
+    SOUND_VOLUME.load(Ordering::Relaxed)
+}
+
+pub fn sound_style() -> String {
+    SOUND_STYLE.lock().unwrap().clone()
+}
+
+fn write_toml(f: impl FnOnce(&str) -> String) {
+    let path = dir().join("config.toml");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let _ = std::fs::write(&path, f(&text));
+    }
+}
+
+/// Attiva/disattiva i suoni e lo scrive in config.toml (`sounds = ...`).
+pub fn set_sounds(on: bool) {
+    SOUNDS.store(on, Ordering::Relaxed);
+    write_toml(|t| set_toml_bool(t, "sounds", on));
+}
+
+/// Imposta il volume dei suoni (0-100) e lo scrive in config.toml (`sound_volume = ...`).
+pub fn set_sound_volume(v: i64) {
+    let v = clamp_volume(v);
+    SOUND_VOLUME.store(v, Ordering::Relaxed);
+    write_toml(|t| set_toml_int(t, "sound_volume", v as i64));
+}
+
+/// Imposta il tipo di suono (`sound_style = ...`).
+pub fn set_sound_style(style: &str) {
+    *SOUND_STYLE.lock().unwrap() = style.to_string();
+    write_toml(|t| set_toml_string(t, "sound_style", style));
+}
+
 pub fn debug_enabled() -> bool {
     DEBUG.load(Ordering::Relaxed)
 }
@@ -395,6 +454,23 @@ fn delete_logs_at(path: &Path) {
 
 /// Imposta `chiave = true/false` al livello principale del TOML, senza toccare commenti e tabelle.
 pub fn set_toml_bool(text: &str, key: &str, value: bool) -> String {
+    let new_line = format!("{key} = {value}");
+    let mut lines: Vec<String> = text.lines().map(String::from).collect();
+    let is_key = |l: &String| {
+        !l.trim_start().starts_with('#') && l.split_once('=').map_or(false, |(k, _)| k.trim() == key)
+    };
+    if let Some(i) = lines.iter().position(|l| is_key(l)) {
+        lines[i] = new_line;
+    } else {
+        let at = lines.iter().position(|l| l.trim_start().starts_with('[')).unwrap_or(lines.len());
+        lines.insert(at, String::new());
+        lines.insert(at, new_line);
+    }
+    lines.join("\r\n") + "\r\n"
+}
+
+/// Imposta `chiave = numero` al livello principale del TOML, senza toccare commenti e tabelle.
+pub fn set_toml_int(text: &str, key: &str, value: i64) -> String {
     let new_line = format!("{key} = {value}");
     let mut lines: Vec<String> = text.lines().map(String::from).collect();
     let is_key = |l: &String| {
@@ -954,5 +1030,26 @@ mod tests {
         assert!(Config::default().overlay && example().overlay);
         let off: Config = toml::from_str("overlay = false").unwrap();
         assert!(!off.overlay);
+    }
+
+    #[test]
+    fn sounds_defaults_parse_and_clamp() {
+        let d = Config::default();
+        assert!(d.sounds && d.sound_volume == 40 && d.sound_style == "soft");
+        assert!(example().sounds);
+        let c: Config = toml::from_str("sounds = false\nsound_volume = 75\nsound_style = \"chime\"").unwrap();
+        assert!(!c.sounds && c.sound_volume == 75 && c.sound_style == "chime");
+        assert_eq!((clamp_volume(-5), clamp_volume(0), clamp_volume(55), clamp_volume(900)), (0, 0, 55, 100));
+    }
+
+    #[test]
+    fn set_toml_int_replaces_or_adds_before_tables() {
+        let t = "a = 1\r\nsound_volume = 10\r\n[[apps]]\r\nname = \"x\"\r\n";
+        let r = set_toml_int(t, "sound_volume", 80);
+        assert!(r.contains("sound_volume = 80") && !r.contains("= 10"));
+        let added = set_toml_int("a = 1\r\n[[apps]]\r\n", "sound_volume", 5);
+        assert!(added.find("sound_volume = 5").unwrap() < added.find("[[apps]]").unwrap());
+        let parsed: Config = toml::from_str(&added).unwrap();
+        assert_eq!(parsed.sound_volume, 5);
     }
 }
