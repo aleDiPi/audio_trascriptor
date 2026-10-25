@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-const API: &str = "https://api.github.com/repos/aleDiPi/audio_trascriptor/releases/tags/latest";
+const API: &str = "https://api.github.com/repos/aleDiPi/audio_trascriptor/releases/latest";
 
 /// true mentre si registra o si elabora un audio: l'aggiornamento aspetta.
 pub static BUSY: AtomicBool = AtomicBool::new(false);
@@ -102,8 +102,8 @@ fn run_setup(token: &str, rel: &Release) -> Result<(), String> {
 /// Controlla subito; se c'e' una versione piu' recente la installa. Ok(false) = gia' aggiornato.
 pub fn check_and_apply(token: &str) -> Result<bool, String> {
     let rel = fetch_latest(token)?;
-    config::debug(|| format!("aggiornamenti: online {}, installato {}", release::short(&rel.commit), release::current_commit().map_or("build locale", release::short)));
-    if !release::needs_update(release::current_commit(), &rel.commit) {
+    config::debug(|| format!("aggiornamenti: online {}, installato {}", rel.version, release::current_version().map_or("build locale".to_string(), |v| v.to_string())));
+    if !release::needs_update(release::current_version(), rel.version) {
         return Ok(false);
     }
     // non interrompere una dettatura in corso
@@ -113,7 +113,7 @@ pub fn check_and_apply(token: &str) -> Result<bool, String> {
         }
         std::thread::sleep(Duration::from_secs(10));
     }
-    config::log(&format!("aggiornamento alla versione {}", release::short(&rel.commit)));
+    config::log(&format!("aggiornamento alla versione {}", rel.version));
     let exe_dir_writable = std::env::current_exe().ok().and_then(|p| p.parent().map(release::dir_writable)).unwrap_or(false);
     if !rel.installer_required && !exe_dir_writable {
         config::debug(|| "cartella del programma non scrivibile (Program Files): uso l'installer".into());
@@ -133,7 +133,7 @@ pub fn start_background() {
     std::thread::spawn(|| {
         std::thread::sleep(Duration::from_secs(20));
         loop {
-            if release::current_commit().is_some() && config::auto_update_enabled() {
+            if release::current_version().is_some() && config::auto_update_enabled() {
                 if let Some(token) = config::update_token() {
                     if let Err(e) = check_and_apply(&token) {
                         config::log(&format!("controllo aggiornamenti: {e}"));

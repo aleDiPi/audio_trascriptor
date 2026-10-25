@@ -28,6 +28,9 @@ const ID_TOKEN_CLEAR: i32 = 116;
 const ID_VERINFO: i32 = 117;
 const ID_DEBUG_TEXT: i32 = 118;
 const ID_PROMPT_SEL: i32 = 119;
+const ID_CHECK_NOW: i32 = 120;
+const ID_UPDATE_NOW: i32 = 121;
+const ID_UPD_RESULT: i32 = 122;
 const ID_TAB0: i32 = 200; // 200..=204: pulsanti delle sezioni
 const TABS: [&str; 5] = ["API", "GitHub", "Impostazioni", "Prompt", "Info"];
 
@@ -37,10 +40,12 @@ const TIMER_USAGE: usize = 1;
 const WM_VERIFIED: u32 = WM_APP + 1;
 const WM_TOKEN_DONE: u32 = WM_APP + 2;
 const WM_UPDATE_INFO: u32 = WM_APP + 3;
+const WM_UPD_RESULT: u32 = WM_APP + 4;
 
 static RESULT: Mutex<Option<String>> = Mutex::new(None);
 static TOKEN_RESULT: Mutex<Option<String>> = Mutex::new(None);
 static UPDATE_INFO: Mutex<Option<String>> = Mutex::new(None);
+static UPD_RESULT: Mutex<Option<String>> = Mutex::new(None);
 /// Controlli di ogni sezione: (finestra, indice sezione). Si mostra solo quella scelta.
 static PAGES: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
 /// Titoli e testi dei prompt della sezione Prompt (stessi indici della lista a discesa).
@@ -233,7 +238,10 @@ unsafe fn build(hwnd: HWND) {
     let p = 2;
     let auto = child(hwnd, p, "BUTTON", "Aggiornamenti automatici attivi (serve il token GitHub)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 56, 600, 22), ID_AUTOUPD);
     SendMessageW(auto, BM_SETCHECK, config::auto_update_enabled() as usize, 0);
-    let dbg = child(hwnd, p, "BUTTON", "Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 92, 600, 22), ID_DEBUG);
+    child(hwnd, p, "BUTTON", "Verifica aggiornamenti", BS_PUSHBUTTON as u32 | WS_TABSTOP, (16, 86, 170, 28), ID_CHECK_NOW);
+    child(hwnd, p, "BUTTON", "Aggiorna ora", BS_PUSHBUTTON as u32 | WS_TABSTOP, (196, 86, 150, 28), ID_UPDATE_NOW);
+    info(hwnd, p, "Verifica: controlla se esiste una versione piu' recente. Aggiorna ora: la scarica e la installa subito (anche con gli aggiornamenti automatici spenti).", (16, 120, 608, 50), ID_UPD_RESULT);
+    let dbg = child(hwnd, p, "BUTTON", "Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 184, 600, 22), ID_DEBUG);
     SendMessageW(dbg, BM_SETCHECK, config::debug_enabled() as usize, 0);
     let dtx = child(
         hwnd,
@@ -241,18 +249,18 @@ unsafe fn build(hwnd: HWND) {
         "BUTTON",
         "Nel log anche il testo dettato, il prompt e la risposta dell'AI (privato: solo per cercare un problema)",
         BS_AUTOCHECKBOX as u32 | WS_TABSTOP,
-        (36, 118, 580, 22),
+        (36, 210, 580, 22),
         ID_DEBUG_TEXT,
     );
     SendMessageW(dtx, BM_SETCHECK, cfg.debug_log_text as usize, 0);
-    child(hwnd, p, "BUTTON", "Apri log", BS_PUSHBUTTON as u32 | WS_TABSTOP, (16, 154, 128, 28), ID_OPENLOG);
-    child(hwnd, p, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (156, 154, 150, 28), ID_FOLDER);
-    info(hwnd, p, &format!("Log: {}", config::log_path().display()), (16, 192, 608, 34), 0);
+    child(hwnd, p, "BUTTON", "Apri log", BS_PUSHBUTTON as u32 | WS_TABSTOP, (16, 246, 128, 28), ID_OPENLOG);
+    child(hwnd, p, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (156, 246, 150, 28), ID_FOLDER);
+    info(hwnd, p, &format!("Log: {}", config::log_path().display()), (16, 284, 608, 34), 0);
     info(
         hwnd,
         p,
         "Spegnendo la modalita' debug i file di log vengono cancellati. Scorciatoia, lingua, modelli e prompt si cambiano in config.toml (\"Apri cartella config\"), poi \"Ricarica configurazione\" dal menu dell'icona.",
-        (16, 234, 608, 70),
+        (16, 326, 608, 70),
         0,
     );
 
@@ -298,10 +306,60 @@ unsafe fn build(hwnd: HWND) {
     check_update_in_background(hwnd);
 }
 
-/// "Versione 0.1.0 (build abc1234)" oppure "(build locale)".
+/// "Versione installata: 2026.10.25.3 (build abc1234)" oppure "locale (build locale)".
 fn version_line() -> String {
     let build = release::current_commit().map_or("build locale".to_string(), |c| format!("build {}", release::short(c)));
-    format!("Versione installata: {} ({build})", env!("CARGO_PKG_VERSION"))
+    let version = release::current_version().map_or("locale".to_string(), |v| v.to_string());
+    format!("Versione installata: {version} ({build})")
+}
+
+/// Esito del controllo online (senza installare nulla), come testo per la finestra.
+fn update_report(token: &str) -> String {
+    match updater::fetch_latest(token) {
+        Ok(r) if release::needs_update(release::current_version(), r.version) => format!(
+            "{}\r\nAggiornamento disponibile: {} (installata {}).",
+            version_line(),
+            r.version,
+            release::current_version().map_or("locale".to_string(), |v| v.to_string())
+        ),
+        Ok(r) if release::current_version().is_none() => {
+            format!("{}\r\nBuild locale: gli aggiornamenti automatici non si applicano (online c'e' la {}).", version_line(), r.version)
+        }
+        Ok(r) => format!("{}\r\nSei aggiornato: l'ultima versione online e' la {}.", version_line(), r.version),
+        Err(e) => format!("{}\r\nControllo aggiornamenti non riuscito: {e}", version_line()),
+    }
+}
+
+/// "Verifica aggiornamenti" (apply = false) e "Aggiorna ora" (apply = true): lavorano in un thread e
+/// scrivono l'esito nella sezione Impostazioni e in Info.
+unsafe fn manual_update(hwnd: HWND, apply: bool) {
+    let Some(token) = config::update_token() else {
+        set_text(GetDlgItem(hwnd, ID_UPD_RESULT), "Nessun token GitHub: inseriscilo nella sezione GitHub, oppure scarica a mano il nuovo installer dalla pagina Release.");
+        return;
+    };
+    for id in [ID_CHECK_NOW, ID_UPDATE_NOW] {
+        EnableWindow(GetDlgItem(hwnd, id), 0);
+    }
+    set_text(GetDlgItem(hwnd, ID_UPD_RESULT), "Controllo in corso...");
+    let h = hwnd as usize;
+    std::thread::spawn(move || {
+        let post = |text: String| {
+            *UPD_RESULT.lock().unwrap() = Some(text);
+            unsafe { PostMessageW(h as HWND, WM_UPD_RESULT, 0, 0) };
+        };
+        let report = update_report(&token);
+        let newer = updater::fetch_latest(&token).map_or(false, |r| release::needs_update(release::current_version(), r.version));
+        if apply && newer {
+            post(format!("{report}\r\nScarico e installo: il programma si riavvia tra pochi secondi (Windows puo' chiedere i permessi di amministratore)."));
+            std::thread::sleep(std::time::Duration::from_secs(3)); // il tempo di leggere il messaggio
+            match updater::check_and_apply(&token) {
+                Ok(_) => post(format!("{report}\r\nGia' aggiornato.")),
+                Err(e) => post(format!("{report}\r\nAggiornamento non riuscito: {e}")),
+            }
+        } else {
+            post(report);
+        }
+    });
 }
 
 /// Stato del token GitHub (sezione GitHub).
@@ -330,19 +388,7 @@ unsafe fn check_update_in_background(hwnd: HWND) {
     }
     let h = hwnd as usize;
     std::thread::spawn(move || {
-        let text = match updater::fetch_latest(&token) {
-            Ok(r) if release::needs_update(release::current_commit(), &r.commit) => format!(
-                "{}\r\nAggiornamento disponibile ({}): verra' installato in automatico entro poche ore, oppure al prossimo avvio.",
-                version_line(),
-                release::short(&r.commit)
-            ),
-            Ok(_) if release::current_commit().is_none() => {
-                format!("{}\r\nBuild locale: gli aggiornamenti automatici non si applicano.", version_line())
-            }
-            Ok(_) => format!("{}\r\nSei aggiornato all'ultima versione.", version_line()),
-            Err(e) => format!("{}\r\nControllo aggiornamenti non riuscito: {e}", version_line()),
-        };
-        *UPDATE_INFO.lock().unwrap() = Some(text);
+        *UPDATE_INFO.lock().unwrap() = Some(update_report(&token));
         unsafe { PostMessageW(h as HWND, WM_UPDATE_INFO, 0, 0) };
     });
 }
@@ -403,10 +449,11 @@ fn verify_and_save_token(typed: String) -> (String, Option<String>) {
         }
     }
     let head = format!("Token valido{}. Aggiornamenti automatici attivi.", if saved { " e salvato" } else { "" });
-    if release::needs_update(release::current_commit(), &rel.commit) && !config::auto_update_enabled() {
-        (format!("{head}\r\nC'e' una versione piu' recente ({}), ma gli aggiornamenti automatici sono disattivati: spunta la casella per installarla.", release::short(&rel.commit)), None)
-    } else if release::needs_update(release::current_commit(), &rel.commit) {
-        (format!("{head}\r\nVersione online {} piu' recente: la scarico e riavvio il programma tra pochi secondi.", release::short(&rel.commit)), Some(token))
+    let newer = release::needs_update(release::current_version(), rel.version);
+    if newer && !config::auto_update_enabled() {
+        (format!("{head}\r\nC'e' una versione piu' recente ({}), ma gli aggiornamenti automatici sono disattivati: spunta la casella nella sezione Impostazioni, oppure usa \"Aggiorna ora\".", rel.version), None)
+    } else if newer {
+        (format!("{head}\r\nVersione online {} piu' recente: la scarico e riavvio il programma tra pochi secondi.", rel.version), Some(token))
     } else {
         (format!("{head}\r\n{}\r\nSei gia' all'ultima versione.", version_line()), None)
     }
@@ -486,6 +533,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     set_text(GetDlgItem(hwnd, ID_UPDATE), &msg);
                     set_text(GetDlgItem(hwnd, ID_VERINFO), &update_info_initial());
                 }
+                ID_CHECK_NOW => manual_update(hwnd, false),
+                ID_UPDATE_NOW => manual_update(hwnd, true),
                 ID_DEBUG_TEXT => {
                     let on = SendMessageW(GetDlgItem(hwnd, ID_DEBUG_TEXT), BM_GETCHECK, 0, 0) == 1;
                     config::set_debug_log_text(on);
@@ -540,6 +589,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_UPDATE_INFO => {
             if let Some(text) = UPDATE_INFO.lock().unwrap().take() {
                 set_text(GetDlgItem(hwnd, ID_VERINFO), &text);
+            }
+            0
+        }
+        WM_UPD_RESULT => {
+            if let Some(text) = UPD_RESULT.lock().unwrap().take() {
+                set_text(GetDlgItem(hwnd, ID_UPD_RESULT), &text);
+                set_text(GetDlgItem(hwnd, ID_VERINFO), &text);
+            }
+            for id in [ID_CHECK_NOW, ID_UPDATE_NOW] {
+                EnableWindow(GetDlgItem(hwnd, id), 1);
             }
             0
         }
