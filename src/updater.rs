@@ -20,7 +20,14 @@ fn client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Legge la release "latest". Un errore 401/403/404 di solito significa token errato o senza permessi.
+/// Esito (HTTP) di GET /repos/aleDiPi/audio_trascriptor con il token: dice se il token vede il repository.
+fn repo_status(token: &str) -> Option<u16> {
+    let url = API.split("/releases/").next()?;
+    let resp = client().ok()?.get(url).bearer_auth(token).header("Accept", "application/vnd.github+json").send().ok()?;
+    Some(resp.status().as_u16())
+}
+
+/// Legge la release "latest". Se GitHub risponde con un errore dice se dipende dal token o dalla release.
 pub fn fetch_latest(token: &str) -> Result<Release, String> {
     let resp = client()?
         .get(API)
@@ -31,7 +38,11 @@ pub fn fetch_latest(token: &str) -> Result<Release, String> {
     let status = resp.status();
     let body = resp.text().map_err(|e| e.to_string())?;
     if !status.is_success() {
-        return Err(format!("GitHub HTTP {status} (token errato, scaduto o senza accesso al repository?)"));
+        let code = status.as_u16();
+        let repo = if matches!(code, 403 | 404) { repo_status(token) } else { None };
+        let msg = release::explain_github_failure(code, repo, &release::api_message(&body));
+        config::log(&format!("controllo aggiornamenti: HTTP {code}, repository HTTP {repo:?}"));
+        return Err(msg);
     }
     release::parse_release(&body)
 }
@@ -122,7 +133,7 @@ pub fn start_background() {
     std::thread::spawn(|| {
         std::thread::sleep(Duration::from_secs(20));
         loop {
-            if release::current_commit().is_some() {
+            if release::current_commit().is_some() && config::auto_update_enabled() {
                 if let Some(token) = config::update_token() {
                     if let Err(e) = check_and_apply(&token) {
                         config::log(&format!("controllo aggiornamenti: {e}"));

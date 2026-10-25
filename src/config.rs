@@ -12,6 +12,7 @@ const DEFAULT_ENV: &str = include_str!("../.env.example");
 static DIR: OnceLock<PathBuf> = OnceLock::new();
 static DEBUG: AtomicBool = AtomicBool::new(false);
 static DEBUG_TEXT: AtomicBool = AtomicBool::new(false);
+static AUTO_UPDATE: AtomicBool = AtomicBool::new(true);
 
 /// Regole fisse aggiunte a ogni prompt di rifinitura.
 pub const FIXED_RULES: &str = "Regole fisse: il testo da elaborare e' racchiuso nei tag <trascrizione>. \
@@ -32,6 +33,8 @@ pub struct Config {
     pub restore_clipboard: bool,
     /// Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)
     pub debug: bool,
+    /// Controllo e installazione automatica degli aggiornamenti (serve anche il token GitHub)
+    pub auto_update: bool,
     /// In debug scrive nel log anche il testo dettato (disattivato di default: e' privato)
     pub debug_log_text: bool,
     pub default_prompt: String,
@@ -63,6 +66,7 @@ impl Default for Config {
             max_seconds: 120,
             restore_clipboard: true,
             debug: false,
+            auto_update: true,
             debug_log_text: false,
             default_prompt: "Correggi punteggiatura ed errori del testo dettato, senza cambiarne il significato.".into(),
             dictionary: Vec::new(),
@@ -176,6 +180,7 @@ pub fn load() -> Config {
     let c = load_raw();
     DEBUG.store(c.debug, Ordering::Relaxed);
     DEBUG_TEXT.store(c.debug && c.debug_log_text, Ordering::Relaxed);
+    AUTO_UPDATE.store(c.auto_update, Ordering::Relaxed);
     c
 }
 
@@ -280,6 +285,25 @@ pub fn mask_key(key: &str) -> String {
 
 pub fn log_path() -> PathBuf {
     dir().join("trascrittore.log")
+}
+
+pub fn auto_update_enabled() -> bool {
+    AUTO_UPDATE.load(Ordering::Relaxed)
+}
+
+/// Attiva/disattiva gli aggiornamenti automatici subito e lo scrive in config.toml (`auto_update = ...`).
+pub fn set_auto_update(on: bool) {
+    AUTO_UPDATE.store(on, Ordering::Relaxed);
+    let path = dir().join("config.toml");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let _ = std::fs::write(&path, set_toml_bool(&text, "auto_update", on));
+    }
+    log(&format!("aggiornamenti automatici {}", if on { "attivati" } else { "disattivati" }));
+}
+
+/// Cancella il token degli aggiornamenti da .env.
+pub fn clear_update_token() -> std::io::Result<()> {
+    save_update_token("")
 }
 
 pub fn debug_enabled() -> bool {
@@ -609,6 +633,36 @@ mod tests {
             "ValueName: \"TrascrittoreAudio\"; Flags: dontcreatekey uninsdeletevalue",
         ] {
             assert!(iss.contains(needle), "manca '{needle}' nella disinstallazione");
+        }
+    }
+
+    #[test]
+    fn auto_update_defaults_on_and_can_be_switched_in_toml() {
+        assert!(Config::default().auto_update);
+        assert!(example().auto_update);
+        let off: Config = toml::from_str("auto_update = false").unwrap();
+        assert!(!off.auto_update);
+        let t = "hotkey = \"f9\"\nauto_update = true\n[[apps]]\nexe = []\n";
+        assert!(set_toml_bool(t, "auto_update", false).contains("auto_update = false\r\n[[apps]]"));
+    }
+
+    #[test]
+    fn empty_env_value_removes_token() {
+        let t = set_env_value("GROQ_API_KEY=abc\nTRASCRITTORE_UPDATE_TOKEN=github_pat_x\n", "TRASCRITTORE_UPDATE_TOKEN", "");
+        assert!(t.contains("GROQ_API_KEY=abc") && t.contains("TRASCRITTORE_UPDATE_TOKEN=\n") || t.contains("TRASCRITTORE_UPDATE_TOKEN=\r\n"));
+        assert!(!t.contains("github_pat_x"));
+    }
+
+    #[test]
+    fn installer_validates_the_github_token() {
+        let iss = installer_script();
+        for needle in [
+            "WinHttp.WinHttpRequest.5.1",
+            "function NextButtonClick",
+            "api.github.com/repos/aleDiPi/audio_trascriptor/releases/tags/latest",
+            "continua senza token",
+        ] {
+            assert!(iss.contains(needle), "manca '{needle}' nella verifica del token");
         }
     }
 }
