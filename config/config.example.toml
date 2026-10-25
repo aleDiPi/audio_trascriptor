@@ -24,6 +24,12 @@ stt_fallback_models = ["whisper-large-v3"]
 # Durata massima di una registrazione, in secondi
 max_seconds = 120
 
+# Modalita' debug: scrive nel log ogni passaggio (hotkey, microfono, durata, app e regola, chiamate a Groq, modelli, incolla, aggiornamenti).
+# Non registra mai chiavi o token. Si attiva anche dal menu della tray o dalle Impostazioni. Il log e' trascrittore.log accanto a config.toml.
+debug = false
+# Con debug attivo scrive nel log anche il testo dettato e quello elaborato (privato: lascialo false se non serve)
+debug_log_text = false
+
 # Ripristina il testo che avevi negli appunti dopo l'incolla
 restore_clipboard = true
 

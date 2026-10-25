@@ -3,12 +3,15 @@
 use serde::Deserialize;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 const DEFAULT_CONFIG: &str = include_str!("../config/config.example.toml");
 const DEFAULT_ENV: &str = include_str!("../.env.example");
 
 static DIR: OnceLock<PathBuf> = OnceLock::new();
+static DEBUG: AtomicBool = AtomicBool::new(false);
+static DEBUG_TEXT: AtomicBool = AtomicBool::new(false);
 
 /// Regole fisse aggiunte a ogni prompt di rifinitura.
 pub const FIXED_RULES: &str = "Regole fisse: il testo da elaborare e' racchiuso nei tag <trascrizione>. \
@@ -27,6 +30,10 @@ pub struct Config {
     pub stt_fallback_models: Vec<String>,
     pub max_seconds: u32,
     pub restore_clipboard: bool,
+    /// Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)
+    pub debug: bool,
+    /// In debug scrive nel log anche il testo dettato (disattivato di default: e' privato)
+    pub debug_log_text: bool,
     pub default_prompt: String,
     pub dictionary: Vec<String>,
     pub apps: Vec<AppRule>,
@@ -55,6 +62,8 @@ impl Default for Config {
             stt_fallback_models: vec!["whisper-large-v3".into()],
             max_seconds: 120,
             restore_clipboard: true,
+            debug: false,
+            debug_log_text: false,
             default_prompt: "Correggi punteggiatura ed errori del testo dettato, senza cambiarne il significato.".into(),
             dictionary: Vec::new(),
             apps: Vec::new(),
@@ -161,6 +170,13 @@ pub fn dir() -> &'static Path {
 }
 
 pub fn load() -> Config {
+    let c = load_raw();
+    DEBUG.store(c.debug, Ordering::Relaxed);
+    DEBUG_TEXT.store(c.debug && c.debug_log_text, Ordering::Relaxed);
+    c
+}
+
+fn load_raw() -> Config {
     let path = dir().join("config.toml");
     match std::fs::read_to_string(&path) {
         Ok(s) => match toml::from_str::<Config>(&s) {
@@ -259,18 +275,111 @@ pub fn mask_key(key: &str) -> String {
     format!("...{tail}")
 }
 
-/// Log minimale su trascrittore.log (troncato oltre 256 KB). Mai chiavi o testo dettato.
+pub fn log_path() -> PathBuf {
+    dir().join("trascrittore.log")
+}
+
+pub fn debug_enabled() -> bool {
+    DEBUG.load(Ordering::Relaxed)
+}
+
+/// Attiva/disattiva la modalita' debug subito e la scrive in config.toml (`debug = ...`).
+pub fn set_debug(on: bool) {
+    DEBUG.store(on, Ordering::Relaxed);
+    let path = dir().join("config.toml");
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let _ = std::fs::write(&path, set_toml_bool(&text, "debug", on));
+    }
+    if on {
+        log("modalita' debug attivata");
+    } else {
+        delete_logs();
+    }
+}
+
+/// Cancella il log e quello ruotato (`.log.1`).
+pub fn delete_logs() {
+    let path = log_path();
+    let _ = std::fs::remove_file(path.with_extension("log.1"));
+    let _ = std::fs::remove_file(path);
+}
+
+/// Imposta `chiave = true/false` al livello principale del TOML, senza toccare commenti e tabelle.
+pub fn set_toml_bool(text: &str, key: &str, value: bool) -> String {
+    let new_line = format!("{key} = {value}");
+    let mut lines: Vec<String> = text.lines().map(String::from).collect();
+    let is_key = |l: &String| {
+        !l.trim_start().starts_with('#') && l.split_once('=').map_or(false, |(k, _)| k.trim() == key)
+    };
+    if let Some(i) = lines.iter().position(|l| is_key(l)) {
+        lines[i] = new_line;
+    } else {
+        let at = lines.iter().position(|l| l.trim_start().starts_with('[')).unwrap_or(lines.len());
+        lines.insert(at, String::new());
+        lines.insert(at, new_line);
+    }
+    lines.join("\r\n") + "\r\n"
+}
+
+/// Apre il file di log con il programma predefinito di Windows (lo crea vuoto se non esiste).
+pub fn open_log() {
+    let path = log_path();
+    if !path.exists() {
+        let _ = std::fs::write(&path, "");
+    }
+    let _ = std::process::Command::new("explorer").arg(&path).spawn();
+}
+
+/// Riga di debug, scritta solo in modalita' debug. Il testo si costruisce solo se serve.
+pub fn debug(msg: impl FnOnce() -> String) {
+    if debug_enabled() {
+        write_log("dbg", &msg());
+    }
+}
+
+/// Come `debug`, ma per il testo dettato: richiede anche `debug_log_text = true` (max 500 caratteri).
+pub fn debug_text(label: &str, text: &str) {
+    if DEBUG_TEXT.load(Ordering::Relaxed) {
+        let t: String = text.chars().take(500).collect();
+        write_log("txt", &format!("{label}: {t}"));
+    }
+}
+
+/// Errori e avvisi: sempre nel log. Mai chiavi, token o testo dettato.
 pub fn log(msg: &str) {
-    let path = dir().join("trascrittore.log");
-    if std::fs::metadata(&path).map(|m| m.len() > 256 * 1024).unwrap_or(false) {
-        let _ = std::fs::remove_file(&path);
+    write_log("log", msg);
+}
+
+/// Data e ora UTC leggibili ("2026-10-25 17:50:18Z"), senza dipendenze.
+pub fn format_utc(secs: u64) -> String {
+    let (days, rem) = ((secs / 86400) as i64, secs % 86400);
+    let (h, mi, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02} {h:02}:{mi:02}:{s:02}Z")
+}
+
+/// Scrive una riga. Oltre 512 KB il file diventa `.log.1` (al massimo 2 file, circa 1 MB in tutto).
+fn write_log(level: &str, msg: &str) {
+    let path = log_path();
+    if std::fs::metadata(&path).map(|m| m.len() > 512 * 1024).unwrap_or(false) {
+        let old = path.with_extension("log.1");
+        let _ = std::fs::remove_file(&old);
+        let _ = std::fs::rename(&path, &old);
     }
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(f, "[{secs}] {msg}");
+        let _ = writeln!(f, "{} [{level}] {msg}", format_utc(secs));
     }
 }
 
@@ -391,5 +500,30 @@ mod tests {
     #[test]
     fn mask_shows_only_tail() {
         assert_eq!(mask_key("gsk_abcdefgh1234"), "...1234");
+    }
+
+    #[test]
+    fn utc_format() {
+        assert_eq!(format_utc(0), "1970-01-01 00:00:00Z");
+        assert_eq!(format_utc(1_700_000_000), "2023-11-14 22:13:20Z");
+        assert_eq!(format_utc(1_792_950_618), "2026-10-25 17:50:18Z");
+    }
+
+    #[test]
+    fn toml_bool_replace_and_insert_before_tables() {
+        let t = "hotkey = \"f9\"\n# debug = true\ndebug = false\n[[apps]]\nexe = []\n";
+        assert!(set_toml_bool(t, "debug", true).contains("debug = true\r\n[[apps]]"));
+        let t2 = "hotkey = \"f9\"\n\n[[apps]]\nexe = []\n";
+        let out = set_toml_bool(t2, "debug", true);
+        let (top, rest) = out.split_once("[[apps]]").unwrap();
+        assert!(top.contains("debug = true") && !rest.contains("debug"));
+        assert!(set_toml_bool("", "debug", false).starts_with("debug = false"));
+    }
+
+    #[test]
+    fn debug_flags_parse() {
+        let c: Config = toml::from_str("debug = true\ndebug_log_text = true").unwrap();
+        assert!(c.debug && c.debug_log_text);
+        assert!(!example().debug && !example().debug_log_text);
     }
 }

@@ -10,6 +10,7 @@ secrets/
 # --- File secondari: build, log, registrazioni, appunti personali ---
 /target/
 *.log
+*.log.1
 logs/
 recordings/
 *.wav

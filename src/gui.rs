@@ -19,6 +19,8 @@ const ID_FOLDER: i32 = 107;
 const ID_TOKEN: i32 = 108;
 const ID_TOKEN_SAVE: i32 = 109;
 const ID_UPDATE: i32 = 110;
+const ID_DEBUG: i32 = 111;
+const ID_OPENLOG: i32 = 112;
 const TIMER_USAGE: usize = 1;
 const WM_VERIFIED: u32 = WM_APP + 1;
 const WM_TOKEN_DONE: u32 = WM_APP + 2;
@@ -56,7 +58,7 @@ pub fn show() {
             lpszClassName: class.as_ptr(),
         };
         RegisterClassW(&wc); // 0 se gia' registrata: va bene
-        let (ww, wh) = (656, 830);
+        let (ww, wh) = (656, 850);
         let x = (GetSystemMetrics(SM_CXSCREEN) - ww) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - wh) / 2;
         let title = w("Trascrittore audio - Impostazioni");
@@ -135,14 +137,18 @@ unsafe fn build(hwnd: HWND) {
     );
     child(hwnd, "STATIC", &fb, 0, (16, 448, 470, 34), 0);
     child(hwnd, "BUTTON", "Apri cartella config", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 446, 128, 28), ID_FOLDER);
-    child(hwnd, "STATIC", "Prompt inviati all'AI, per ogni caso:", 0, (16, 488, 400, 18), 0);
+    let dbg = child(hwnd, "BUTTON", "Modalita' debug: scrive nel log ogni passaggio (mai chiavi o token)", BS_AUTOCHECKBOX as u32 | WS_TABSTOP, (16, 490, 470, 22), ID_DEBUG);
+    SendMessageW(dbg, BM_SETCHECK, config::debug_enabled() as usize, 0);
+    child(hwnd, "BUTTON", "Apri log", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 487, 128, 28), ID_OPENLOG);
+    child(hwnd, "STATIC", &format!("Log: {}", config::log_path().display()), 0, (16, 518, 608, 18), 0);
+    child(hwnd, "STATIC", "Prompt inviati all'AI, per ogni caso:", 0, (16, 542, 400, 18), 0);
     let report = cfg.prompt_report().replace("\r\n", "\n").replace('\n', "\r\n");
     child(
         hwnd,
         "EDIT",
         &report,
         (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | WS_VSCROLL | WS_TABSTOP,
-        (16, 510, 608, 262),
+        (16, 564, 608, 222),
         ID_PROMPTS,
     );
     SetTimer(hwnd, TIMER_USAGE, 3000, None);
@@ -309,6 +315,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             match (wp & 0xFFFF) as i32 {
                 ID_SAVE => on_save(hwnd),
                 ID_TOKEN_SAVE => on_token_save(hwnd),
+                ID_OPENLOG => config::open_log(),
+                ID_DEBUG => {
+                    let on = SendMessageW(GetDlgItem(hwnd, ID_DEBUG), BM_GETCHECK, 0, 0) == 1;
+                    config::set_debug(on);
+                }
                 ID_FOLDER => {
                     let _ = std::process::Command::new("explorer").arg(config::dir()).spawn();
                 }
@@ -318,6 +329,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         }
         WM_TIMER => {
             if wp == TIMER_USAGE {
+                // tiene allineata la casella con il menu della tray
+                SendMessageW(GetDlgItem(hwnd, ID_DEBUG), BM_SETCHECK, config::debug_enabled() as usize, 0);
                 let h = GetDlgItem(hwnd, ID_USAGE);
                 let t = usage_text();
                 if get_text(h) != t {

@@ -17,6 +17,7 @@ pub fn start(max_seconds: u32) -> Result<Recorder, String> {
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or("nessun microfono predefinito")?;
     let cfg = device.default_input_config().map_err(|e| e.to_string())?;
+    crate::config::debug(|| format!("microfono: {:?}, {} Hz, {} canali, {:?}", device.description().map(|d| d.to_string()).unwrap_or_default(), cfg.sample_rate(), cfg.channels(), cfg.sample_format()));
     let rate: u32 = cfg.sample_rate().into();
     let channels = cfg.channels() as usize;
     let max = rate as usize * max_seconds as usize;
@@ -69,11 +70,15 @@ impl Recorder {
     pub fn finish(self) -> Option<Vec<u8>> {
         drop(self.stream);
         let samples = std::mem::take(&mut *self.buf.lock().unwrap()); // senza copia: libera subito il buffer
+        crate::config::debug(|| format!("registrati {:.1} s di audio", samples.len() as f32 / self.rate as f32));
         if samples.len() < self.rate as usize / 4 {
+            crate::config::debug(|| "audio troppo breve (meno di 0,25 s): scartato".into());
             return None; // meno di 0,25 s
         }
         let peak = samples.iter().fold(0f32, |m, s| m.max(s.abs()));
+        crate::config::debug(|| format!("picco del segnale {peak:.3}"));
         if peak < 0.005 {
+            crate::config::debug(|| "audio silenzioso (picco < 0.005): scartato, controlla il microfono predefinito di Windows".into());
             return None; // silenzio: evita allucinazioni di Whisper
         }
         let pcm = resample(&samples, self.rate, TARGET_RATE);
