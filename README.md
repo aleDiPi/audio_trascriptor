@@ -20,9 +20,9 @@ Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quan
 
 La GitHub Action produce `Trascrittore-Setup.exe` (artifact `trascrittore-setup`, nella pagina dell'esecuzione in *Actions*). L'installer:
 
-- installa il programma per l'utente corrente (senza permessi di amministratore) e crea la voce nel menu Start;
-- non chiede la chiave Groq (si inserisce dalle impostazioni, clic sull'icona nella tray); chiede invece, facoltativo, il token GitHub per gli aggiornamenti automatici (vedi sotto);
-- crea `%APPDATA%\Trascrittore\config.toml` se manca (non lo sovrascrive negli aggiornamenti);
+- installa il programma per tutto il PC in `C:\ProgramData\Trascrittore` (chiede i permessi di amministratore una volta; la cartella e' scrivibile dagli utenti del PC, cosi' l'aggiornamento automatico sostituisce l'exe senza richiedere ogni volta l'UAC) e crea la voce nel menu Start;
+- non chiede la chiave Groq (si inserisce dalle impostazioni, clic sull'icona nella tray); chiede invece, facoltativo, il token GitHub per gli aggiornamenti automatici (la pagina contiene i passaggi per crearlo e il link diretto a GitHub);
+- crea `config.toml` e `.env` nella stessa cartella se mancano (non li sovrascrive negli aggiornamenti); se arrivi dalla vecchia installazione per-utente, li copia da `%APPDATA%\Trascrittore`;
 - offre l'avvio automatico con Windows;
 - scegliendo il tipo **Programma + strumenti di sviluppo** installa anche Rust e Visual Studio Build Tools con lo stesso script di `scripts\setup-windows.ps1`. Servono solo per compilare dal sorgente, non per usare il programma.
 
@@ -46,13 +46,13 @@ Per generarlo a mano: `cargo build --release`, poi `ISCC.exe /DAppVersion=0.1.0 
 
 In alternativa scarica l'exe gia' compilato dagli artifact della GitHub Action "Build Windows".
 
-Se `config.toml` non e' nella cartella corrente o accanto all'exe, il programma usa `%APPDATA%\Trascrittore\` (creandolo con i valori predefiniti). Menu tray (tasto destro): **Avvia con Windows**, **Apri cartella configurazione**, **Ricarica configurazione**, **Esci**.
+Il programma cerca `config.toml` nella cartella corrente, accanto all'exe e infine in `%APPDATA%\Trascrittore\`; se non lo trova usa quest'ultima (creandolo con i valori predefiniti). Menu tray (tasto destro): **Avvia con Windows**, **Apri cartella configurazione**, **Ricarica configurazione**, **Esci**.
 
 ## Modalita' debug e log
 
 Quando disattivi la modalita' debug, i file di log gia' presenti (`trascrittore.log` e `trascrittore.log.1`) vengono cancellati.
 
-Nei primi test attiva la **modalita' debug**: dal menu dell'icona nella tray (*Modalita' debug*), dalla finestra Impostazioni oppure con `debug = true` in `config.toml`. Il log (*Apri log* nel menu o nelle Impostazioni) si trova in `%APPDATA%\Trascrittore\trascrittore.log` (accanto a `config.toml`; la finestra Impostazioni ne mostra il percorso) e contiene data e ora UTC, e per ogni dettatura:
+Nei primi test attiva la **modalita' debug**: dal menu dell'icona nella tray (*Modalita' debug*), dalla finestra Impostazioni oppure con `debug = true` in `config.toml`. Il log (*Apri log* nel menu o nelle Impostazioni) si trova accanto a `config.toml` (con l'installer `C:\ProgramData\Trascrittore\trascrittore.log`; la finestra Impostazioni ne mostra il percorso) e contiene data e ora UTC, e per ogni dettatura:
 
 - hotkey premuta/rilasciata e app in primo piano (nome del programma e titolo della finestra);
 - microfono usato, frequenza, durata registrata e livello del segnale (utile se il microfono predefinito di Windows e' sbagliato o muto);
@@ -66,12 +66,12 @@ Senza debug il log contiene solo avvio, errori e avvisi. **Non** scrive mai chia
 
 Il repository e' privato, quindi per aggiornarsi da solo il programma ha bisogno di un token GitHub di **sola lettura**:
 
-1. GitHub, *Settings*, *Developer settings*, *Personal access tokens*, *Fine-grained tokens*, *Generate new token*.
+1. Apri direttamente <https://github.com/settings/personal-access-tokens/new> (*Settings*, *Developer settings*, *Personal access tokens*, *Fine-grained tokens*, *Generate new token*).
 2. *Repository access*: **Only select repositories**, solo `aleDiPi/audio_trascriptor`.
 3. *Permissions*, *Repository permissions*: **Contents: Read-only** (nient'altro). Scegli una scadenza (es. 1 anno) e crea il token.
-4. Incolla il token nell'installer (pagina "Aggiornamenti automatici") oppure nella finestra Impostazioni, *Verifica e salva*. Viene salvato solo sul tuo PC, in `%APPDATA%\Trascrittore\.env` (`TRASCRITTORE_UPDATE_TOKEN`); non e' mai dentro l'eseguibile ne' nel repository.
+4. Incolla il token nell'installer (pagina "Aggiornamenti automatici") oppure nella finestra Impostazioni, *Verifica e salva*. Viene salvato solo sul tuo PC, in `.env` accanto al programma (`TRASCRITTORE_UPDATE_TOKEN`); non e' mai dentro l'eseguibile ne' nel repository.
 
-Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge la release `latest`. Se il commit e' diverso dal suo, scarica **solo `trascrittore.exe`** (pochi MB), controlla lo SHA-256 dichiarato da GitHub, rinomina l'eseguibile in uso, mette il nuovo al suo posto e si riavvia. Se la verifica fallisce non cambia nulla; se lo scambio non e' possibile (cartella non scrivibile) usa l'installer completo in modalita' silenziosa. L'installer completo viene usato anche quando un aggiornamento e' marcato `[installer]` nel titolo della PR (modifiche strutturali). Durante una dettatura l'aggiornamento aspetta. Senza token gli aggiornamenti sono manuali: scarica `Trascrittore-Setup.exe` dalla pagina Release. Le build locali (`cargo build`) non si aggiornano mai.
+Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge la release `latest`. Se il commit e' diverso dal suo, scarica **solo `trascrittore.exe`** (pochi MB), controlla lo SHA-256 dichiarato da GitHub, rinomina l'eseguibile in uso, mette il nuovo al suo posto e si riavvia. Se la verifica fallisce non cambia nulla; se lo scambio non e' possibile (cartella non scrivibile) usa l'installer completo in modalita' silenziosa. L'installer completo viene usato anche quando un aggiornamento e' marcato `[installer]` nel titolo della PR (modifiche strutturali). Durante una dettatura l'aggiornamento aspetta. Sicurezza: tutti gli utenti del PC possono leggere `.env` e sostituire l'exe in `C:\ProgramData\Trascrittore`; l'installazione e' pensata per un PC personale. Senza token gli aggiornamenti sono manuali: scarica `Trascrittore-Setup.exe` dalla pagina Release. Le build locali (`cargo build`) non si aggiornano mai.
 
 ## Impostazioni (clic sull'icona nella tray)
 
@@ -111,7 +111,7 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 
 - **Audio**: la registrazione sta solo in RAM e non viene mai scritta su disco. Il buffer e' limitato da `max_seconds` (120 s: circa 23 MB a 48 kHz durante la registrazione, qualche MB per una dettatura normale) e viene liberato appena finita l'elaborazione.
 - **Log**: `trascrittore.log` (vedi sotto) e' limitato a due file da 512 KB al massimo (`.log` e `.log.1`).
-- **File fissi**: `config.toml` e `.env` in `%APPDATA%\Trascrittore`, pochi KB. Il programma installato e' un solo `.exe` di pochi MB.
+- **File fissi**: `config.toml` e `.env` nella cartella del programma (`C:\ProgramData\Trascrittore` con l'installer), pochi KB. Il programma installato e' un solo `.exe` di pochi MB.
 - **Aggiornamenti**: il nuovo `.exe` viene scaricato accanto al vecchio e il file `.old` viene cancellato al riavvio successivo; l'eventuale installer scaricato in `%TEMP%\Trascrittore-Update` viene cancellato all'avvio successivo.
 - **Contatori di utilizzo**: sono in memoria (poche righe per modello) e si azzerano alla chiusura.
 - A riposo il programma non fa nulla (icona nella tray e un controllo aggiornamenti ogni 6 ore, se hai il token); la finestra impostazioni esiste solo quando e' aperta.

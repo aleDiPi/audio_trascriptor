@@ -564,4 +564,30 @@ mod tests {
         assert!(!p.exists() && !p.with_extension("log.1").exists());
         delete_logs_at(&p); // nessun errore se non c'e' piu' nulla
     }
+
+    fn installer_script() -> String {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/installer/trascrittore.iss");
+        std::fs::read_to_string(path).expect("installer/trascrittore.iss")
+    }
+
+    #[test]
+    fn installer_is_per_machine_in_programdata() {
+        let iss = installer_script();
+        assert!(iss.contains("DefaultDirName={commonappdata}\\Trascrittore"));
+        assert!(iss.contains("PrivilegesRequired=admin"));
+        assert!(iss.contains("Permissions: users-modify")); // l'auto-aggiornamento non deve richiedere UAC
+        assert!(!iss.contains("{userappdata}\\Trascrittore\\.env"));
+        // config e .env stanno accanto al programma, dove li cerca dir()
+        assert!(iss.contains("DestDir: \"{app}\"; DestName: \"config.toml\""));
+        assert!(iss.contains("DestDir: \"{app}\"; DestName: \".env\""));
+    }
+
+    #[test]
+    fn installer_token_page_explains_token_creation() {
+        let iss = installer_script();
+        assert!(iss.contains("https://github.com/settings/personal-access-tokens/new"));
+        for needle in ["Only select repositories", "Contents", "Read-only", "aleDiPi/audio_trascriptor", "github_pat_"] {
+            assert!(iss.contains(needle), "manca '{needle}' nella pagina del token");
+        }
+    }
 }
