@@ -68,7 +68,7 @@ impl Recorder {
     /// Ferma la registrazione e restituisce un WAV mono 16 kHz, o None se vuoto/silenzioso.
     pub fn finish(self) -> Option<Vec<u8>> {
         drop(self.stream);
-        let samples = self.buf.lock().unwrap().clone();
+        let samples = std::mem::take(&mut *self.buf.lock().unwrap()); // senza copia: libera subito il buffer
         if samples.len() < self.rate as usize / 4 {
             return None; // meno di 0,25 s
         }

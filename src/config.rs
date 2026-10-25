@@ -287,7 +287,7 @@ mod tests {
         let c = example();
         assert_eq!(c.hotkey, "ctrl+win");
         assert!(!c.is_toggle());
-        assert!(c.default_prompt.contains("pulizia"));
+        assert!(c.default_prompt.contains("correttore"));
         assert!(!c.apps.is_empty());
     }
 
@@ -347,10 +347,10 @@ mod tests {
     #[test]
     fn system_prompt_layers() {
         let mut c = example();
-        c.dictionary = vec!["Groq".into(), "OpenWhispr".into()];
+        c.dictionary = vec!["Groq".into(), "Rustup".into()];
         let base = c.system_prompt(None);
-        assert!(base.contains("pulizia del testo") && base.contains(FIXED_RULES));
-        assert!(base.contains("Groq, OpenWhispr"));
+        assert!(base.contains("correttore") && base.contains(FIXED_RULES));
+        assert!(base.contains("Groq, Rustup"));
         let outlook = c.system_prompt(c.rule_for("outlook.exe", ""));
         assert!(outlook.contains("client di posta") && outlook.starts_with(&c.default_prompt));
     }

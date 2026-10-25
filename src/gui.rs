@@ -115,7 +115,7 @@ unsafe fn build(hwnd: HWND) {
     child(hwnd, "BUTTON", "Verifica e salva", BS_PUSHBUTTON as u32 | WS_TABSTOP, (496, 160, 128, 28), ID_TOKEN_SAVE);
     child(hwnd, "STATIC", &update_status_initial(), 0, (16, 194, 608, 48), ID_UPDATE);
     let info = format!(
-        "Modelli in uso (i predefiniti Groq di OpenWhispr):  trascrizione {}  |  AI {}",
+        "Modelli in uso:  trascrizione {}  |  AI {}",
         cfg.stt_model, cfg.llm_model
     );
     child(hwnd, "STATIC", &info, 0, (16, 248, 608, 34), 0);

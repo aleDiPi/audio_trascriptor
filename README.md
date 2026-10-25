@@ -1,6 +1,6 @@
 # Trascrittore audio
 
-Dettatura vocale per Windows in stile OpenWhispr, scritta in Rust (un solo `.exe`, nessun runtime da installare).
+Dettatura vocale per Windows, scritta in Rust (un solo `.exe`, nessun runtime da installare).
 
 **Come funziona:** tieni premuta la scorciatoia (default `Ctrl+Win`), parla, rilascia. L'audio del microfono predefinito di Windows viene trascritto da Groq Whisper, rifinito da un LLM Groq con un prompt che dipende dall'app in primo piano (Outlook, Slack, VS Code, Word...) e il risultato viene incollato dove hai il cursore.
 
@@ -64,7 +64,7 @@ Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge la 
 Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) apre una finestra nativa che esiste solo finche' e' aperta. Mostra:
 
 - la chiave API Groq: scrivila e premi **Verifica e salva**; il programma la prova su Groq e, se funziona, la salva in `.env` (si vedono solo le ultime 4 cifre);
-- i modelli in uso: trascrizione `whisper-large-v3-turbo` e AI `openai/gpt-oss-120b`, i modelli Groq predefiniti di OpenWhispr; in `config.toml` si possono cambiare;
+- i modelli in uso: trascrizione `whisper-large-v3-turbo` e AI `openai/gpt-oss-120b`; in `config.toml` si possono cambiare;
 - la versione installata e se c'e' un aggiornamento, con il campo per il token degli aggiornamenti;
 - l'utilizzo di Groq: Groq **non** espone un credito residuo (il piano gratuito ha limiti di richieste e token). La finestra mostra i limiti e i valori rimasti letti dagli header di Groq e i contatori dall'avvio, e si aggiorna da sola. I valori compaiono dopo il primo utilizzo;
 - i modelli di riserva: se Groq risponde "limite raggiunto" (HTTP 429) il programma passa in automatico al modello successivo (`fallback_models`, `stt_fallback_models`) e salta quello in pausa finche' il limite non si resetta;
@@ -75,7 +75,7 @@ Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) a
 - `hotkey`: scorciatoia, es. `"ctrl+win"`, `"ctrl+alt+space"`, `"f9"`.
 - `mode`: `"hold"` (tieni premuto) o `"toggle"` (premi per iniziare/finire).
 - `language`, `stt_model`, `llm_model`, `fallback_models`, `stt_fallback_models`, `max_seconds`, `restore_clipboard`.
-- `default_prompt`: prompt di base sempre applicato (prompt di pulizia di [OpenWhispr](https://github.com/OpenWhispr/openwhispr), licenza MIT). Il `prompt` della regola dell'app viene aggiunto a questo.
+- `default_prompt`: prompt di base sempre applicato (pulizia del testo dettato). Il `prompt` della regola dell'app viene aggiunto a questo.
 - `dictionary`: parole/nomi da scrivere esattamente cosi'.
 - `[[apps]]`: regole per app, con `exe` (nomi dei processi), `prompt`, `raw = true` per incollare la trascrizione senza AI, `send_enter = true` per premere Invio dopo l'incolla (es. Claude desktop, al posto dello script AutoHotkey `claude-auto-invio.ahk`), `paste = "shift+insert"` per i terminali che lo richiedono, `title_contains` per distinguere ad es. un sito nel browser.
 
@@ -88,10 +88,16 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 - La parte specifica di Windows e' isolata in `src/platform.rs` e `src/hotkey.rs`: il resto e' portabile per un eventuale porting a macOS/Linux.
 - Vedi `SECURITY.md` per la gestione dei segreti.
 
-## Crediti
-
-Il prompt di pulizia del testo deriva da [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT, © OpenWhispr Team).
 
 ## Test
 
 `cargo test` verifica il parsing della configurazione, i prompt per app, il salvataggio della chiave in `.env`, la lettura della release di aggiornamento (URL ammessi, SHA-256, marcatore `[installer]`), il passaggio ai modelli di riserva, la scelta della regola per app (inclusi `send_enter` e `raw`) e il parsing della scorciatoia. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.
+
+## Spazio occupato
+
+- **Audio**: la registrazione sta solo in RAM e non viene mai scritta su disco. Il buffer e' limitato da `max_seconds` (120 s: circa 23 MB a 48 kHz durante la registrazione, qualche MB per una dettatura normale) e viene liberato appena finita l'elaborazione.
+- **Log**: `trascrittore.log` contiene solo errori (mai testo dettato ne' chiavi) e viene azzerato oltre 256 KB.
+- **File fissi**: `config.toml` e `.env` in `%APPDATA%\Trascrittore`, pochi KB. Il programma installato e' un solo `.exe` di pochi MB.
+- **Aggiornamenti**: il nuovo `.exe` viene scaricato accanto al vecchio e il file `.old` viene cancellato al riavvio successivo; l'eventuale installer scaricato in `%TEMP%\Trascrittore-Update` viene cancellato all'avvio successivo.
+- **Contatori di utilizzo**: sono in memoria (poche righe per modello) e si azzerano alla chiusura.
+- A riposo il programma non fa nulla (icona nella tray e un controllo aggiornamenti ogni 6 ore, se hai il token); la finestra impostazioni esiste solo quando e' aperta.
