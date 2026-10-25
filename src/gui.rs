@@ -73,7 +73,7 @@ pub fn show() {
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: hinst,
-            hIcon: null_mut(),
+            hIcon: LoadIconW(hinst, 1usize as *const u16),
             hCursor: LoadCursorW(null_mut(), IDC_ARROW),
             hbrBackground: (COLOR_WINDOW + 1) as usize as HBRUSH,
             lpszMenuName: null(),
