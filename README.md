@@ -113,6 +113,10 @@ Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 - Vedi `SECURITY.md` per la gestione dei segreti.
 
 
+## Icona del programma
+
+`assets/icon.ico` (16-256 px: microfono bianco con onde sonore su fondo blu) e' incorporata nell'exe tramite `build.rs` e `assets/app.rc`: la usano Esplora risorse, il menu Start, l'installer, la voce di disinstallazione e la finestra Impostazioni. L'icona nella tray ha lo stesso microfono con il fondo che cambia con lo stato (blu pronto, rosso registra, ambra elabora, grigio errore). Per rigenerarla: `python assets/make_icon.py` (serve Pillow).
+
 ## Icona con alone
 
 Mentre tieni premuta la scorciatoia compare in basso a destra (sullo schermo della finestra attiva) un cerchio scuro con l'icona del programma in cui verra' incollato il testo, circondato da un alone rosso che si allarga con il volume del microfono e si restringe quando taci. Durante la trascrizione l'alone diventa ambra e "respira"; poi sparisce. La finestra non prende il focus, non intercetta i clic ed e' nascosta (nessun timer) quando non serve. Si disattiva dalla sezione Impostazioni o con `overlay = false` in `config.toml`.

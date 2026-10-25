@@ -24,6 +24,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\trascrittore.exe
+SetupIconFile=..\assets\icon.ico
 ; Stesso nome del mutex usato dal programma: l'installer chiede di chiuderlo se e' in esecuzione
 AppMutex=Local\TrascrittoreAudioSingleInstance
 

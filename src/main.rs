@@ -27,6 +27,9 @@ mod hotkey;
 mod levels;
 #[cfg(windows)]
 mod overlay;
+#[cfg(any(windows, test))]
+#[cfg_attr(not(windows), allow(dead_code))]
+mod trayicon;
 #[cfg(windows)]
 mod platform;
 #[cfg(any(windows, test))]
@@ -184,22 +187,13 @@ mod app {
     }
 
     fn icon(state: Ui) -> Icon {
-        let (r, g, b) = match state {
-            Ui::Idle => (60, 120, 220),
-            Ui::Recording => (220, 40, 40),
-            Ui::Working => (240, 160, 30),
-            Ui::Error => (140, 140, 140),
+        let tone = match state {
+            Ui::Idle => trayicon::Tone::Idle,
+            Ui::Recording => trayicon::Tone::Recording,
+            Ui::Working => trayicon::Tone::Working,
+            Ui::Error => trayicon::Tone::Error,
         };
-        let n = 32i32;
-        let mut px = Vec::with_capacity((n * n * 4) as usize);
-        for y in 0..n {
-            for x in 0..n {
-                let (dx, dy) = (x - n / 2, y - n / 2);
-                let inside = dx * dx + dy * dy <= 14 * 14;
-                px.extend_from_slice(&if inside { [r, g, b, 255] } else { [0, 0, 0, 0] });
-            }
-        }
-        Icon::from_rgba(px, n as u32, n as u32).expect("icona")
+        Icon::from_rgba(trayicon::pixels(tone, 32), 32, 32).expect("icona")
     }
 
     fn worker(rx: Receiver<Event>, notify: Arc<dyn Fn(Ui, String) + Send + Sync>) {
