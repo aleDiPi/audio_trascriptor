@@ -248,7 +248,7 @@ begin
   if SavedTokenState = 2 then
     Result := True
   else if SavedTokenState = 3 then
-    TokenPage.SubCaption := 'Il token salvato non e'' piu'' accettato da GitHub: incollane uno nuovo (o lascia vuoto per tenerlo cosi'' com''e'').';
+    TokenPage.SubCaptionLabel.Caption := 'Il token salvato non e'' piu'' accettato da GitHub: incollane uno nuovo (o lascia vuoto per tenerlo cosi'' com''e'').';
 end;
 
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
