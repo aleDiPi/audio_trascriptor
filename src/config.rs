@@ -33,6 +33,7 @@ pub struct AppRule {
     pub prompt: String,
     pub raw: bool,
     pub paste: String,
+    pub send_enter: bool,
 }
 
 impl Default for Config {

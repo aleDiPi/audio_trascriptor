@@ -37,7 +37,7 @@ Se `config.toml` non e' nella cartella corrente o accanto all'exe, il programma 
 - `language`, `stt_model`, `llm_model`, `max_seconds`, `restore_clipboard`.
 - `default_prompt`: prompt di base sempre applicato (prompt di pulizia di [OpenWhispr](https://github.com/OpenWhispr/openwhispr), licenza MIT). Il `prompt` della regola dell'app viene aggiunto a questo.
 - `dictionary`: parole/nomi da scrivere esattamente cosi'.
-- `[[apps]]`: regole per app, con `exe` (nomi dei processi), `prompt`, `raw = true` per incollare la trascrizione senza AI, `paste = "shift+insert"` per i terminali che lo richiedono, `title_contains` per distinguere ad es. un sito nel browser.
+- `[[apps]]`: regole per app, con `exe` (nomi dei processi), `prompt`, `raw = true` per incollare la trascrizione senza AI, `send_enter = true` per premere Invio dopo l'incolla (es. Claude desktop, al posto dello script AutoHotkey `claude-auto-invio.ahk`), `paste = "shift+insert"` per i terminali che lo richiedono, `title_contains` per distinguere ad es. un sito nel browser.
 
 Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
 

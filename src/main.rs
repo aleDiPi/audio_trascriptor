@@ -236,6 +236,7 @@ mod app {
             })
         };
         let paste = rule.map_or("ctrl+v", |r| if r.paste.is_empty() { "ctrl+v" } else { r.paste.as_str() });
-        platform::paste_text(&final_text, paste, cfg.restore_clipboard)
+        let send_enter = rule.map_or(false, |r| r.send_enter);
+        platform::paste_text(&final_text, paste, cfg.restore_clipboard, send_enter)
     }
 }

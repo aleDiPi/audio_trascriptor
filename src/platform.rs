@@ -117,7 +117,7 @@ fn key(vk: u16, up: bool) -> INPUT {
 }
 
 /// Incolla `text` nell'app in primo piano tramite appunti + scorciatoia di incolla.
-pub fn paste_text(text: &str, paste: &str, restore: bool) -> Result<(), String> {
+pub fn paste_text(text: &str, paste: &str, restore: bool, send_enter: bool) -> Result<(), String> {
     let previous = if restore { get_clipboard_text() } else { None };
     if !set_clipboard_text(text) {
         return Err("appunti non accessibili".into());
@@ -131,6 +131,14 @@ pub fn paste_text(text: &str, paste: &str, restore: bool) -> Result<(), String> 
     let inputs = [key(modifier, false), key(vk, false), key(vk, true), key(modifier, true)];
     unsafe {
         SendInput(inputs.len() as u32, inputs.as_ptr(), std::mem::size_of::<INPUT>() as i32);
+    }
+    if send_enter {
+        // lascia all'app il tempo di completare l'incolla, poi invia
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let inputs = [key(VK_RETURN, false), key(VK_RETURN, true)];
+        unsafe {
+            SendInput(inputs.len() as u32, inputs.as_ptr(), std::mem::size_of::<INPUT>() as i32);
+        }
     }
     if let Some(prev) = previous {
         std::thread::sleep(std::time::Duration::from_millis(250));
