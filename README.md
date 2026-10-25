@@ -16,6 +16,8 @@ Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quan
 
 ## Installer (consigliato)
 
+**Download diretto (senza clonare il repository):** [Trascrittore-Setup.exe](https://github.com/aleDiPi/audio_trascriptor/releases/latest/download/Trascrittore-Setup.exe) (il repository e' privato: serve essere collegati a GitHub con il proprio account). Ogni merge su `main` aggiorna la release "latest".
+
 La GitHub Action produce `Trascrittore-Setup.exe` (artifact `trascrittore-setup`, nella pagina dell'esecuzione in *Actions*). L'installer:
 
 - installa il programma per l'utente corrente (senza permessi di amministratore) e crea la voce nel menu Start;
