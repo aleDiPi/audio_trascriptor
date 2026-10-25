@@ -87,7 +87,7 @@ impl Default for Config {
             stt_fallback_models: vec!["whisper-large-v3".into()],
             providers: vec!["groq".into(), "openai".into(), "anthropic".into()],
             openai_stt_model: "gpt-4o-mini-transcribe".into(),
-            openai_llm_model: "gpt-4o-mini".into(),
+            openai_llm_model: "gpt-4.1-nano".into(),
             anthropic_llm_model: "claude-haiku-5-5".into(),
             max_seconds: 120,
             restore_clipboard: true,
@@ -420,6 +420,38 @@ pub fn set_toml_bool(text: &str, key: &str, value: bool) -> String {
     lines.join("\r\n") + "\r\n"
 }
 
+/// Imposta `chiave = "valore"` al livello principale del TOML, senza toccare commenti e tabelle.
+pub fn set_toml_string(text: &str, key: &str, value: &str) -> String {
+    let clean: String = value.chars().filter(|c| !c.is_control() && *c != '"' && *c != '\\').collect();
+    let new_line = format!("{key} = \"{}\"", clean.trim());
+    let mut lines: Vec<String> = text.lines().map(String::from).collect();
+    let is_key = |l: &String| {
+        !l.trim_start().starts_with('#') && l.split_once('=').map_or(false, |(k, _)| k.trim() == key)
+    };
+    if let Some(i) = lines.iter().position(|l| is_key(l)) {
+        lines[i] = new_line;
+    } else {
+        let at = lines.iter().position(|l| l.trim_start().starts_with('[')).unwrap_or(lines.len());
+        lines.insert(at, String::new());
+        lines.insert(at, new_line);
+    }
+    lines.join("\r\n") + "\r\n"
+}
+
+/// Salva i modelli OpenAI/Anthropic in config.toml; i campi vuoti o con spazi vengono ignorati.
+pub fn set_provider_models(openai_stt: &str, openai_llm: &str, anthropic_llm: &str) {
+    let path = dir().join("config.toml");
+    if let Ok(mut text) = std::fs::read_to_string(&path) {
+        for (key, v) in [("openai_stt_model", openai_stt), ("openai_llm_model", openai_llm), ("anthropic_llm_model", anthropic_llm)] {
+            let v = v.trim();
+            if !v.is_empty() && !v.chars().any(char::is_whitespace) {
+                text = set_toml_string(&text, key, v);
+            }
+        }
+        let _ = std::fs::write(&path, text);
+    }
+}
+
 /// Imposta `chiave = ["a", "b"]` al livello principale del TOML, senza toccare commenti e tabelle.
 pub fn set_toml_list(text: &str, key: &str, values: &[String]) -> String {
     let items: Vec<String> = values.iter().map(|v| format!("\"{}\"", v.replace('\\', "").replace('"', ""))).collect();
@@ -498,6 +530,10 @@ pub fn refine_request(model: &str, system: &str, text: &str) -> serde_json::Valu
             {"role": "user", "content": format!("<trascrizione>{text}</trascrizione>")}
         ]
     });
+    // i modelli OpenAI "ragionanti" (gpt-5..., o1/o3/o4) accettano solo la temperatura di default
+    if ["gpt-5", "o1", "o3", "o4"].iter().any(|p| model.starts_with(p)) {
+        body.as_object_mut().map(|o| o.remove("temperature"));
+    }
     // risposta rapida: serve solo pulizia del testo, non ragionamento
     if model.contains("gpt-oss") {
         body["reasoning_effort"] = "low".into();
@@ -672,6 +708,32 @@ mod tests {
         assert!(t.find("providers = [").unwrap() < t.find("[[apps]]").unwrap());
         let c: Config = toml::from_str(&t).unwrap();
         assert_eq!(c.providers, v);
+    }
+
+    #[test]
+    fn toml_string_replaces_or_inserts_and_strips_quotes() {
+        let t = set_toml_string("hotkey = \"x\"\nopenai_llm_model = \"old\"\n[[apps]]\n", "openai_llm_model", " gpt-x\"y ");
+        assert!(t.contains("openai_llm_model = \"gpt-xy\""));
+        assert_eq!(t.matches("openai_llm_model").count(), 1);
+        let t = set_toml_string("hotkey = \"x\"\n[[apps]]\n", "anthropic_llm_model", "claude-z");
+        assert!(t.find("anthropic_llm_model").unwrap() < t.find("[[apps]]").unwrap());
+        let c: Config = toml::from_str(&t).unwrap();
+        assert_eq!(c.anthropic_llm_model, "claude-z");
+    }
+
+    #[test]
+    fn reasoning_openai_models_get_no_temperature() {
+        assert!(refine_request("gpt-5-nano", "s", "t").get("temperature").is_none());
+        assert!(refine_request("o4-mini", "s", "t").get("temperature").is_none());
+        assert!(refine_request("gpt-4.1-nano", "s", "t").get("temperature").is_some());
+        assert!(refine_request("openai/gpt-oss-120b", "s", "t").get("temperature").is_some());
+    }
+
+    #[test]
+    fn default_openai_models_are_the_light_tier() {
+        let c = Config::default();
+        assert_eq!(c.openai_llm_model, "gpt-4.1-nano");
+        assert_eq!(c.openai_stt_model, "gpt-4o-mini-transcribe");
     }
 
     #[test]

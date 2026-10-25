@@ -19,7 +19,6 @@ pub fn request_body(model: &str, system: &str, text: &str) -> serde_json::Value 
     serde_json::json!({
         "model": model,
         "max_tokens": MAX_TOKENS,
-        "temperature": 0.2,
         "system": system,
         "messages": [
             {"role": "user", "content": format!("<trascrizione>{text}</trascrizione>")}
@@ -114,6 +113,8 @@ mod tests {
         assert_eq!(b["messages"][0]["role"], "user");
         assert_eq!(b["messages"][0]["content"], "<trascrizione>ciao</trascrizione>");
         assert!(b["max_tokens"].as_u64().unwrap() > 0);
+        // i modelli piu' recenti rifiutano i parametri di campionamento: non si inviano
+        assert!(b.get("temperature").is_none());
     }
 
     #[test]
