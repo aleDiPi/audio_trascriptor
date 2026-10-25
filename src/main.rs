@@ -78,7 +78,7 @@ mod app {
         let cfg = config::load();
         config::log(&format!(
             "avvio: versione {} ({}), cartella {}, hotkey {}, modalita' {}, debug {}",
-            env!("CARGO_PKG_VERSION"),
+            release::current_version().map_or("locale".to_string(), |v| v.to_string()),
             release::current_commit().map_or("build locale", release::short),
             config::dir().display(),
             cfg.hotkey,

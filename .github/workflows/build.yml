@@ -5,6 +5,9 @@ on:
   pull_request:
 permissions:
   contents: write
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: windows-latest
@@ -12,14 +15,29 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Versione AAAA.MM.GG.N
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # data (ora italiana) e numero progressivo del giorno: 2026.10.25.1, 2026.10.25.2, ...
+          $rome = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'W. Europe Standard Time')
+          $day = $rome.ToString('yyyy.MM.dd', [Globalization.CultureInfo]::InvariantCulture)
+          $n = 0
+          $tags = gh release list --limit 200 --json tagName | ConvertFrom-Json
+          foreach ($t in $tags) {
+            if ($t.tagName -match ('^v' + [regex]::Escape($day) + '\.(\d+)$')) { $n = [Math]::Max($n, [int]$Matches[1]) }
+          }
+          $ver = "$day." + ($n + 1)
+          "TRASCRITTORE_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Versione $ver"
       - run: cargo test
       - run: cargo build --release
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
-          $v = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$v" installer\trascrittore.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:TRASCRITTORE_VERSION" installer\trascrittore.iss
       - uses: actions/upload-artifact@v4
         with:
           name: trascrittore-setup
@@ -31,28 +49,31 @@ jobs:
             target/release/trascrittore.exe
             config/config.example.toml
             .env.example
-      - name: Pubblica release "latest" (solo su main)
+      - name: Pubblica la release della versione (solo su main)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $ver = $env:TRASCRITTORE_VERSION
           $msg = git log -1 --pretty=%B | Out-String
           $flag = if ($msg -match '\[installer\]') { ' [installer]' } else { '' }
-          $notes = "Build automatica da main (commit $env:GITHUB_SHA).$flag"
-          $title = "Trascrittore audio - ultima versione"
+          $notes = "Versione $ver. Build automatica da main (commit $env:GITHUB_SHA).$flag"
           Copy-Item target/release/trascrittore.exe trascrittore.exe
+          # una release per ogni versione; l'ultima e' quella "Latest" (link di download diretto)
+          gh release create "v$ver" installer/Output/Trascrittore-Setup.exe trascrittore.exe --target $env:GITHUB_SHA --latest --title "Trascrittore audio $ver" --notes $notes
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # ponte per le installazioni precedenti, che leggono la release fissa "latest": resta aggiornata sul posto
           gh release view latest *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create latest installer/Output/Trascrittore-Setup.exe trascrittore.exe --target $env:GITHUB_SHA --latest --title $title --notes $notes
+            gh release create latest installer/Output/Trascrittore-Setup.exe trascrittore.exe --target $env:GITHUB_SHA --latest=false --title "Ponte per versioni precedenti" --notes $notes
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } else {
-            # la release esiste sempre: non viene piu' cancellata e ricreata (gli aggiornamenti non trovano mai un buco)
             gh release upload latest installer/Output/Trascrittore-Setup.exe trascrittore.exe --clobber
             if ($LASTEXITCODE -ne 0) { exit 1 }
             git tag -f latest $env:GITHUB_SHA
             git push origin refs/tags/latest --force
             if ($LASTEXITCODE -ne 0) { exit 1 }
-            gh release edit latest --target $env:GITHUB_SHA --latest --title $title --notes $notes
+            gh release edit latest --target $env:GITHUB_SHA --latest=false --title "Ponte per versioni precedenti" --notes $notes
             if ($LASTEXITCODE -ne 0) { exit 1 }
           }

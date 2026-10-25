@@ -1,6 +1,7 @@
 //! Parte pura degli aggiornamenti automatici: lettura della release GitHub e confronto versioni.
 
 use serde_json::Value;
+use std::fmt;
 
 /// Prefisso obbligatorio dell'URL dell'asset: il token non viene mai inviato altrove.
 pub const ASSET_PREFIX: &str = "https://api.github.com/repos/aleDiPi/audio_trascriptor/releases/assets/";
@@ -16,8 +17,34 @@ pub struct Asset {
     pub digest: Option<String>,
 }
 
+/// Versione AAAA.MM.GG.N: data della build e numero progressivo del giorno. Si confronta numericamente
+/// (2026.10.25.10 viene dopo 2026.10.25.9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Version(pub u32, pub u32, pub u32, pub u32);
+
+impl Version {
+    /// Accetta "2026.10.25.3" e "v2026.10.25.3" (tag di GitHub): esattamente quattro numeri.
+    pub fn parse(s: &str) -> Option<Version> {
+        let s = s.trim();
+        let s = s.strip_prefix('v').or_else(|| s.strip_prefix('V')).unwrap_or(s);
+        let mut it = s.split('.').map(|p| if !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) { p.parse::<u32>().ok() } else { None });
+        let v = Version(it.next()??, it.next()??, it.next()??, it.next()??);
+        if it.next().is_some() {
+            return None;
+        }
+        Some(v)
+    }
+}
+
+impl fmt::Display for Version {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{:02}.{:02}.{}", self.0, self.1, self.2, self.3)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Release {
+    pub version: Version,
     pub commit: String,
     pub installer_required: bool,
     /// solo l'eseguibile: aggiornamento in-place, scarica pochi MB
@@ -29,6 +56,11 @@ pub struct Release {
 /// Commit da cui e' stato compilato questo eseguibile (impostato dalla GitHub Action).
 pub fn current_commit() -> Option<&'static str> {
     option_env!("GITHUB_SHA").filter(|s| s.len() >= 7)
+}
+
+/// Versione stampata nell'eseguibile dalla GitHub Action (variabile TRASCRITTORE_VERSION). None = build locale.
+pub fn current_version() -> Option<Version> {
+    option_env!("TRASCRITTORE_VERSION").and_then(Version::parse)
 }
 
 pub fn short(sha: &str) -> &str {
@@ -50,7 +82,10 @@ fn find_asset(v: &Value, name: &str) -> Result<Asset, String> {
 pub fn parse_release(json: &str) -> Result<Release, String> {
     let v: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let commit = v["target_commitish"].as_str().ok_or("release senza commit")?.to_string();
+    let tag = v["tag_name"].as_str().unwrap_or("");
+    let version = Version::parse(tag).ok_or_else(|| format!("la release \"{tag}\" non ha una versione AAAA.MM.GG.N"))?;
     Ok(Release {
+        version,
         commit,
         installer_required: v["body"].as_str().map_or(false, |b| b.contains(INSTALLER_MARKER)),
         exe: find_asset(&v, EXE_NAME)?,
@@ -68,8 +103,8 @@ pub fn explain_github_failure(status: u16, repo_status: Option<u16>, api_message
     match (status, repo_status) {
         (401, _) | (404 | 403, Some(401)) => format!("GitHub non accetta il token (errato, revocato o scaduto){detail}."),
         (404, Some(200)) => format!(
-            "Il token e' valido e vede il repository, ma la release \"latest\" non c'e' in questo momento: \
-             viene ricreata a ogni aggiornamento e ci mette un paio di minuti, riprova piu' tardi{detail}."
+            "Il token e' valido e vede il repository, ma non c'e' ancora nessuna release pubblicata \
+             (la pubblicazione richiede un paio di minuti dopo ogni modifica): riprova piu' tardi{detail}."
         ),
         (404 | 403, Some(404 | 403)) => format!("{no_access}{detail}"),
         (403, _) => format!("GitHub nega l'accesso (permessi insufficienti o troppe richieste){detail}."),
@@ -86,9 +121,9 @@ pub fn api_message(body: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Una build locale (senza commit noto) non si aggiorna mai.
-pub fn needs_update(current: Option<&str>, remote: &str) -> bool {
-    current.map_or(false, |c| !c.eq_ignore_ascii_case(remote))
+/// Aggiorna solo se la versione online e' piu' recente. Una build locale (senza versione) non si aggiorna mai.
+pub fn needs_update(current: Option<Version>, remote: Version) -> bool {
+    current.map_or(false, |c| remote > c)
 }
 
 /// L'installer scaricato va eseguito solo se il suo SHA-256 coincide con quello dichiarato da GitHub.
@@ -116,7 +151,7 @@ mod tests {
 
     fn json(url: &str, body: &str) -> String {
         format!(
-            r#"{{"target_commitish":"abc1234def","body":"{body}","assets":[
+            r#"{{"tag_name":"v2026.10.25.3","target_commitish":"abc1234def","body":"{body}","assets":[
               {{"name":"altro.txt","url":"https://x/1"}},
               {{"name":"trascrittore.exe","url":"{url}1","digest":"sha256:AABB"}},
               {{"name":"Trascrittore-Setup.exe","url":"{url}2","digest":"sha256:CCDD"}}]}}"#
@@ -127,6 +162,7 @@ mod tests {
     fn parses_release() {
         let r = parse_release(&json(ASSET_PREFIX, "Build automatica")).unwrap();
         assert_eq!(r.commit, "abc1234def");
+        assert_eq!(r.version, Version(2026, 10, 25, 3));
         assert!(!r.installer_required);
         assert_eq!(r.exe.digest.as_deref(), Some("sha256:AABB"));
         assert!(r.exe.url.ends_with("/1") && r.setup.url.ends_with("/2"));
@@ -151,9 +187,32 @@ mod tests {
 
     #[test]
     fn update_decision() {
-        assert!(needs_update(Some("aaa"), "bbb"));
-        assert!(!needs_update(Some("AAA"), "aaa"));
-        assert!(!needs_update(None, "bbb")); // build locale
+        let v = |s| Version::parse(s).unwrap();
+        assert!(needs_update(Some(v("2026.10.25.1")), v("2026.10.25.2")));
+        assert!(needs_update(Some(v("2026.10.25.9")), v("2026.10.25.10"))); // numerico, non alfabetico
+        assert!(needs_update(Some(v("2026.10.31.7")), v("2026.11.01.1")));
+        assert!(!needs_update(Some(v("2026.10.25.2")), v("2026.10.25.2"))); // gia' aggiornato
+        assert!(!needs_update(Some(v("2026.10.25.5")), v("2026.10.25.2"))); // mai tornare indietro
+        assert!(!needs_update(None, v("2026.10.25.2"))); // build locale
+    }
+
+    #[test]
+    fn version_parse_and_display() {
+        assert_eq!(Version::parse("2026.10.25.3"), Some(Version(2026, 10, 25, 3)));
+        assert_eq!(Version::parse("v2026.10.05.12"), Some(Version(2026, 10, 5, 12)));
+        assert_eq!(Version::parse(" v2026.1.2.3 "), Some(Version(2026, 1, 2, 3)));
+        assert_eq!(Version(2026, 10, 5, 12).to_string(), "2026.10.05.12");
+        assert_eq!(Version::parse(&Version(2026, 1, 2, 3).to_string()), Some(Version(2026, 1, 2, 3)));
+        // servono esattamente quattro numeri
+        for bad in ["", "latest", "2026.10.25", "2026.10.25.3.1", "2026.10.x.3", "2026..25.3", "2026.10.25.-1", "0.1.0"] {
+            assert!(Version::parse(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn refuses_release_without_a_version_tag() {
+        let j = json(ASSET_PREFIX, "x").replace("v2026.10.25.3", "latest");
+        assert!(parse_release(&j).is_err());
     }
 
     #[test]
