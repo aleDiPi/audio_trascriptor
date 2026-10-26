@@ -328,6 +328,7 @@ export component SettingsWindow inherits Window {
     in-out property <bool> debug;
     in-out property <bool> debug-text;
     in-out property <bool> sounds;
+    in-out property <bool> autostart;
     in property <int> sound-style-index;
     in-out property <float> sound-volume;
     in property <string> upd-result;
@@ -361,6 +362,7 @@ export component SettingsWindow inherits Window {
     callback check-update();
     callback apply-update();
     callback toggle-sounds(bool);
+    callback toggle-autostart(bool);
     callback set-sound-style(int);
     callback set-sound-volume(int);
     callback preview-sound();
@@ -512,6 +514,9 @@ export component SettingsWindow inherits Window {
                 if root.page == 3: VerticalLayout {
                     spacing: 10px;
                     Title { text: "Impostazioni"; }
+                    Card { title: "Avvio";
+                        CheckBox { text: "Avvia con Windows (parte ridotto nella tray)"; checked: root.autostart; toggled => { root.toggle-autostart(self.checked); } }
+                    }
                     Card { title: "Durante la dettatura";
                         CheckBox { text: "Mostra l'icona con l'alone sonoro in basso a destra"; checked: root.overlay; toggled => { root.toggle-overlay(self.checked); } }
                     }
