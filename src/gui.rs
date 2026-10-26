@@ -3,7 +3,7 @@
 //! distrutta alla chiusura, quindi da chiusa resta solo un thread in attesa (nessuna CPU).
 
 use crate::providers::{self, Provider};
-use crate::{anthropic, config, localstt, oai, release, sounds, updater, usage};
+use crate::{anthropic, config, localstt, oai, platform, release, sounds, updater, usage};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
 use std::sync::{Condvar, Mutex, Once};
@@ -99,6 +99,7 @@ fn create_window() -> Result<Ui, slint::PlatformError> {
     win.set_ver_info(update_info_initial().into());
     win.set_token_status(token_status().into());
     // i controlli dei suoni si impostano solo qui: aggiornarli col timer sposterebbe il cursore mentre lo si trascina
+    win.set_autostart(platform::autostart_enabled());
     win.set_sounds(config::sounds_enabled());
     win.set_sound_volume(config::sound_volume() as f32);
     win.set_sound_style_index(style_index(&config::sound_style()));
@@ -451,6 +452,7 @@ fn wire(win: &SettingsWindow) {
 
     win.on_toggle_overlay(config::set_overlay);
     win.on_toggle_sounds(config::set_sounds);
+    win.on_toggle_autostart(platform::set_autostart);
     win.on_set_sound_style(|i| {
         let style = sounds::STYLES.get(i.max(0) as usize).copied().unwrap_or(sounds::Style::Soft);
         config::set_sound_style(style.id());

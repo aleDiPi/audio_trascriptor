@@ -213,12 +213,17 @@ pub fn autostart_enabled() -> bool {
         .is_ok()
 }
 
+/// Valore della chiave Run: percorso dell'exe tra virgolette (cosi' funziona anche con gli spazi).
+fn run_value(exe: &std::path::Path) -> String {
+    format!("\"{}\"", exe.display())
+}
+
 pub fn set_autostart(on: bool) {
     let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
     if let Ok((k, _)) = hkcu.create_subkey(RUN_KEY) {
         if on {
             if let Ok(exe) = std::env::current_exe() {
-                let _ = k.set_value(RUN_NAME, &format!("\"{}\"", exe.display()));
+                let _ = k.set_value(RUN_NAME, &run_value(&exe));
             }
         } else {
             let _ = k.delete_value(RUN_NAME);
@@ -240,4 +245,27 @@ pub fn run_installer_after_exit(path: &std::path::Path) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_value_quotes_path_with_spaces() {
+        let v = run_value(std::path::Path::new(r"C:\Program Files\Trascrittore\trascrittore.exe"));
+        assert_eq!(v, r#""C:\Program Files\Trascrittore\trascrittore.exe""#);
+    }
+
+    #[test]
+    fn autostart_roundtrip_in_registry() {
+        let before = autostart_enabled();
+        set_autostart(true);
+        assert!(autostart_enabled());
+        set_autostart(false);
+        assert!(!autostart_enabled());
+        if before {
+            set_autostart(true);
+        }
+    }
 }
