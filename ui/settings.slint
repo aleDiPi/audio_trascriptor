@@ -299,6 +299,8 @@ export component SettingsWindow inherits Window {
     in-out property <bool> debug;
     in-out property <bool> debug-text;
     in-out property <bool> sounds;
+    in-out property <bool> echo-cancel;
+    in property <bool> echo-available;
     in-out property <bool> autostart;
     // true su Linux: nessun bollino a schermo, testi senza riferimenti a Windows
     in property <bool> linux;
@@ -337,6 +339,7 @@ export component SettingsWindow inherits Window {
     callback check-update();
     callback apply-update();
     callback toggle-sounds(bool);
+    callback toggle-echo-cancel(bool);
     callback toggle-autostart(bool);
     callback set-sound-style(int);
     callback set-sound-volume(int);
@@ -508,6 +511,10 @@ export component SettingsWindow inherits Window {
                     }
                     if !root.linux: Card { title: Tr.card_dictation;
                         CheckBox { text: Tr.overlay_check; checked: root.overlay; toggled => { root.toggle-overlay(self.checked); } }
+                    }
+                    Card { title: Tr.card_echo;
+                        CheckBox { text: Tr.echo_check; checked: root.echo-cancel; enabled: root.echo-available; toggled => { root.toggle-echo-cancel(self.checked); } }
+                        Note { text: root.echo-available ? Tr.echo_note : Tr.echo_unavailable; }
                     }
                     Card { title: Tr.card_sounds;
                         CheckBox { text: Tr.sounds_check; checked: root.sounds; toggled => { root.toggle-sounds(self.checked); } }
