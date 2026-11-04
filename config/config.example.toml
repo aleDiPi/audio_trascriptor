@@ -90,7 +90,7 @@ dictionary = []
 
 [[apps]]
 name = "Email"
-exe = ["outlook.exe", "olk.exe", "thunderbird.exe", "thunderbird"]
+exe = ["outlook.exe", "olk.exe", "thunderbird.exe", "thunderbird", "evolution", "geary", "claws-mail"]
 prompt = """CONTEXT: you are writing in an email client. Use a professional, courteous tone and clear paragraphs. \
 Do not invent greetings or signatures that were not spoken."""
 
@@ -127,7 +127,7 @@ Keep the author's content and style."""
 # Claude desktop app: paste and send the message right away
 [[apps]]
 name = "Claude"
-exe = ["claude.exe", "claude"]
+exe = ["claude.exe", "claude", "claude-desktop"]
 send_enter = true
 prompt = """CONTEXT: the text is a message for an AI assistant. Keep the request faithful to what was said, \
 without answering it yourself."""

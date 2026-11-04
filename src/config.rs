@@ -819,6 +819,11 @@ mod tests {
     fn claude_desktop_sends_enter_and_terminals_are_raw() {
         let c = example();
         assert!(c.rule_for("claude.exe", "").unwrap().send_enter);
+        // Linux: the Claude app process is `claude-desktop` (or `claude`)
+        for n in ["claude", "claude-desktop", "Claude-Desktop"] {
+            assert!(c.rule_for(n, "").unwrap().send_enter, "{n}");
+        }
+        assert!(c.rule_for("evolution", "").is_some());
         assert!(c.rule_for("windowsterminal.exe", "").unwrap().raw);
     }
 
