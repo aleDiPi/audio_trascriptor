@@ -9,35 +9,42 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  build:
-    runs-on: windows-latest
+  # Numero di versione AAAA.MM.GG.N, calcolato una volta sola: Windows e Linux partono insieme (in parallelo)
+  # e la pubblicazione finale usa lo stesso numero per tutti i file.
+  version:
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Versione AAAA.MM.GG.N
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # data (ora italiana) e numero progressivo del giorno: 2026.10.25.1, 2026.10.25.2, ...
+          day=$(TZ=Europe/Rome date +%Y.%m.%d)
+          n=0
+          for tag in $(gh release list --limit 200 --json tagName --jq '.[].tagName'); do
+            if [[ "$tag" =~ ^v${day//./\\.}\.([0-9]+)$ ]]; then
+              (( BASH_REMATCH[1] > n )) && n=${BASH_REMATCH[1]}
+            fi
+          done
+          ver="$day.$((n + 1))"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Versione $ver"
+
+  build:
+    needs: version
+    runs-on: windows-latest
     env:
+      TRASCRITTORE_VERSION: ${{ needs.version.outputs.version }}
       # whisper.cpp (trascrizione locale) genera i binding con libclang, gia' installato sul runner
       LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Versione AAAA.MM.GG.N
-        id: version
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # data (ora italiana) e numero progressivo del giorno: 2026.10.25.1, 2026.10.25.2, ...
-          $rome = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'W. Europe Standard Time')
-          $day = $rome.ToString('yyyy.MM.dd', [Globalization.CultureInfo]::InvariantCulture)
-          $n = 0
-          $tags = gh release list --limit 200 --json tagName | ConvertFrom-Json
-          foreach ($t in $tags) {
-            if ($t.tagName -match ('^v' + [regex]::Escape($day) + '\.(\d+)$')) { $n = [Math]::Max($n, [int]$Matches[1]) }
-          }
-          $ver = "$day." + ($n + 1)
-          "TRASCRITTORE_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "Versione $ver"
       - run: cargo test
       - run: cargo build --release
       - name: Installer (Inno Setup)
@@ -56,42 +63,13 @@ jobs:
             target/release/trascrittore.exe
             config/config.example.toml
             .env.example
-      - name: Pubblica la release della versione (solo su main)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $ver = $env:TRASCRITTORE_VERSION
-          $msg = git log -1 --pretty=%B | Out-String
-          $flag = if ($msg -match '\[installer\]') { ' [installer]' } else { '' }
-          $notes = "Versione $ver. Build automatica da main (commit $env:GITHUB_SHA).$flag"
-          Copy-Item target/release/trascrittore.exe trascrittore.exe
-          # una release per ogni versione; l'ultima e' quella "Latest" (link di download diretto)
-          gh release create "v$ver" installer/Output/Trascrittore-Setup.exe trascrittore.exe --target $env:GITHUB_SHA --latest --title "Trascrittore audio $ver" --notes $notes
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          # ponte per le installazioni precedenti, che leggono la release fissa "latest": resta aggiornata sul posto
-          gh release view latest *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create latest installer/Output/Trascrittore-Setup.exe trascrittore.exe --target $env:GITHUB_SHA --latest=false --title "Ponte per versioni precedenti" --notes $notes
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          } else {
-            gh release upload latest installer/Output/Trascrittore-Setup.exe trascrittore.exe --clobber
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-            git tag -f latest $env:GITHUB_SHA
-            git push origin refs/tags/latest --force
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-            gh release edit latest --target $env:GITHUB_SHA --latest=false --title "Ponte per versioni precedenti" --notes $notes
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          }
 
-  # Pacchetto .deb per Linux Mint 22 / Ubuntu 24.04. Parte dopo la build di Windows per usare la stessa versione
-  # e caricare il .deb nella stessa release.
+  # Pacchetto .deb per Linux Mint 22 / Ubuntu 24.04
   linux:
-    needs: build
+    needs: version
     runs-on: ubuntu-24.04
     env:
-      TRASCRITTORE_VERSION: ${{ needs.build.outputs.version }}
+      TRASCRITTORE_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -115,8 +93,48 @@ jobs:
         with:
           name: trascrittore-linux-deb
           path: trascrittore.deb
-      - name: Carica il .deb nella release della versione (solo su main)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "v$TRASCRITTORE_VERSION" trascrittore.deb --clobber
+
+  # Pubblica la release (solo su main) quando Windows e Linux sono entrambi pronti: un'unica release con tutti i file.
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [version, build, linux]
+    runs-on: ubuntu-24.04
+    env:
+      TRASCRITTORE_VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: trascrittore-setup
+          path: dl/setup
+      - uses: actions/download-artifact@v4
+        with:
+          name: trascrittore-windows
+          path: dl/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: trascrittore-linux-deb
+          path: dl/deb
+      - name: Pubblica la release della versione
+        run: |
+          set -euo pipefail
+          ver="$TRASCRITTORE_VERSION"
+          setup=$(find dl/setup -name Trascrittore-Setup.exe | head -1)
+          exe=$(find dl/windows -name trascrittore.exe | head -1)
+          deb=$(find dl/deb -name trascrittore.deb | head -1)
+          for f in "$setup" "$exe" "$deb"; do test -f "$f" || { echo "file mancante: $f"; exit 1; }; done
+          flag=""
+          if git log -1 --pretty=%B | grep -qF '[installer]'; then flag=" [installer]"; fi
+          notes="Versione $ver. Build automatica da main (commit $GITHUB_SHA).$flag"
+          # una release per ogni versione; l'ultima e' quella "Latest" (link di download diretto)
+          gh release create "v$ver" "$setup" "$exe" "$deb" --target "$GITHUB_SHA" --latest --title "Trascrittore audio $ver" --notes "$notes"
+          # ponte per le installazioni precedenti, che leggono la release fissa "latest": resta aggiornata sul posto
+          if gh release view latest > /dev/null 2>&1; then
+            gh release upload latest "$setup" "$exe" "$deb" --clobber
+            git tag -f latest "$GITHUB_SHA"
+            git push origin refs/tags/latest --force
+            gh release edit latest --target "$GITHUB_SHA" --latest=false --title "Ponte per versioni precedenti" --notes "$notes"
+          else
+            gh release create latest "$setup" "$exe" "$deb" --target "$GITHUB_SHA" --latest=false --title "Ponte per versioni precedenti" --notes "$notes"
+          fi
