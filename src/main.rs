@@ -33,6 +33,9 @@ mod providers;
 #[cfg(any(desktop, test))]
 #[cfg_attr(not(desktop), allow(dead_code))]
 mod legal;
+#[cfg(any(desktop, test))]
+#[cfg_attr(not(desktop), allow(dead_code))]
+mod winfit;
 #[cfg(desktop)]
 mod gui;
 #[cfg(windows)]
