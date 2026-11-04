@@ -107,7 +107,7 @@ pub fn open(target: impl AsRef<std::ffi::OsStr>) {
 // ---------- X11
 
 pub fn connect() -> Result<(RustConnection, Window), String> {
-    let (conn, screen) = RustConnection::connect(None).map_err(|e| format!("server grafico X11 non raggiungibile: {e}"))?;
+    let (conn, screen) = RustConnection::connect(None).map_err(|e| format!("X11 display server not reachable: {e}"))?;
     let root = conn.setup().roots[screen].root;
     Ok((conn, root))
 }
@@ -233,7 +233,7 @@ fn send_keys(keysyms: &[u32]) -> Result<(), String> {
     let map = resolve_keycodes(&conn, keysyms);
     let codes: Vec<u8> = keysyms.iter().filter_map(|k| map.get(k).and_then(|v| v.first().copied())).collect();
     if codes.len() != keysyms.len() {
-        return Err("tasto per l'incolla non trovato nella tastiera".into());
+        return Err(crate::i18n::t("err.paste_key"));
     }
     let fake = |ty: u8, code: u8| conn.xtest_fake_input(ty, code, 0, root, 0, 0, 0).map(|_| ()).map_err(|e| e.to_string());
     for c in &codes {
@@ -264,7 +264,7 @@ fn with_clipboard<T>(f: impl FnOnce(&mut arboard::Clipboard) -> T) -> Option<T> 
 pub fn paste_text(text: &str, paste: &str, restore: bool, send_enter: bool) -> Result<(), String> {
     let previous = if restore { with_clipboard(|c| c.get_text().ok()).flatten() } else { None };
     if with_clipboard(|c| c.set_text(text.to_string()).is_ok()) != Some(true) {
-        return Err("appunti non accessibili".into());
+        return Err(crate::i18n::t("err.clipboard"));
     }
     std::thread::sleep(std::time::Duration::from_millis(40));
     send_keys(&paste_keys(paste))?;
@@ -303,7 +303,7 @@ pub fn desktop_exec_quote(exe: &str) -> String {
 /// Contenuto del file .desktop dell'avvio automatico per l'utente.
 pub fn autostart_entry(exe: &str, hidden: bool) -> String {
     format!(
-        "[Desktop Entry]\nType=Application\nName=Trascrittore audio\nComment=Dettatura vocale nella tray\nExec={} --autostart\nIcon=trascrittore\nTerminal=false\nX-GNOME-Autostart-enabled={}\n{}",
+        "[Desktop Entry]\nType=Application\nName=Trascrittore audio\nComment=Voice dictation in the tray\nComment[it]=Dettatura vocale nella tray\nExec={} --autostart\nIcon=trascrittore\nTerminal=false\nX-GNOME-Autostart-enabled={}\n{}",
         desktop_exec_quote(exe),
         !hidden,
         if hidden { "Hidden=true\n" } else { "" }

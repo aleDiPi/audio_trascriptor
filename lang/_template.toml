@@ -1,0 +1,469 @@
+# Template for a new language. Copy this file to <code>.toml (for example fr.toml, pt_br.toml), fill in `name`
+# and translate the texts. Texts left empty ("") fall back to English. Keep the {placeholders} unchanged.
+
+[meta]
+name = ""
+
+[ui]
+# Trascrittore audio - Settings
+window_title = ""
+# Home
+nav_home = ""
+# AI
+nav_ai = ""
+# Prompt
+nav_prompt = ""
+# Settings
+nav_settings = ""
+# Info
+nav_info = ""
+# Paste the key
+paste_key = ""
+# Paste the API key
+paste_api_key = ""
+# Verify and save
+verify_save = ""
+# Remove
+remove = ""
+# Create key
+create_key = ""
+# Use
+use = ""
+# Download
+download = ""
+# Cancel
+cancel = ""
+# Delete
+delete = ""
+# Transcription
+transcription = ""
+# Text correction
+text_correction = ""
+# Text correction (with fallback)
+text_correction_fallback = ""
+# Save models
+save_models = ""
+# Credit and plan
+credit_plan = ""
+# Hold the hotkey, speak, release: the corrected text is pasted where your cursor is.
+home_intro = ""
+# AI for text correction
+card_ai = ""
+# Transcription model
+card_stt = ""
+# Services in priority order
+card_order = ""
+# Hotkey
+card_hotkey = ""
+# Version and updates
+card_version = ""
+# Usage
+card_usage = ""
+# Drag the tiles to change the priority: the first service is used and, if it runs out of credit or rejects its key, the next one takes over (the first is tried again after an hour). Keys are saved only in .env.
+ai_note = ""
+# Groq usage (refreshes by itself)
+groq_usage = ""
+# Prompts sent to the AI, by type of application.
+prompt_note = ""
+# Startup
+card_startup = ""
+# Start at login (starts minimized in the tray)
+autostart_linux = ""
+# Start with Windows (starts minimized in the tray)
+autostart_windows = ""
+# While dictating
+card_dictation = ""
+# Show the icon with the sound halo at the bottom right
+overlay_check = ""
+# Sounds
+card_sounds = ""
+# Sound when recording starts and ends
+sounds_check = ""
+# Type
+sound_type = ""
+# Soft
+sound_soft = ""
+# Click
+sound_click = ""
+# Chime
+sound_chime = ""
+# Try
+try_sound = ""
+# Volume
+volume = ""
+# The sounds are short and do not end up in the recording: the first instants are discarded at the start, and the microphone is already closed at the end.
+sounds_note = ""
+# Language
+card_language = ""
+# Language of the menus and windows. "Automatic" follows the system language. To add a language, see CONTRIBUTING.md in the source repository.
+language_note = ""
+# Configuration
+card_config = ""
+# Hotkey, dictation language, Groq models and prompts are changed in config.toml, then choose "Reload configuration" from the tray icon menu.
+config_note = ""
+# Open config folder
+open_config = ""
+# Version
+card_ver = ""
+# Updates
+card_updates = ""
+# Automatic updates on (needs the GitHub token)
+auto_update_check = ""
+# Check for updates
+check_updates = ""
+# Update now
+update_now = ""
+# GitHub token (paste it here to set or change it)
+github_token_label = ""
+# Create token
+create_token = ""
+# Remove token
+remove_token = ""
+# How to create it: "Create token" opens the page. Choose Resource owner aleDiPi, Repository access only audio_trascriptor and Permissions > Contents = Read-only. Copy the token (it starts with github_pat_) and paste it here.
+token_howto = ""
+# Log and diagnostics
+card_log = ""
+# Debug mode: writes every step to the log (never keys or tokens)
+debug_check = ""
+# Also log the dictated text, prompt and AI reply (private)
+debug_text_check = ""
+# Open log
+open_log = ""
+# Turning debug off deletes the log files.
+debug_off_note = ""
+# Interface built with Slint (royalty-free license for desktop applications, https://slint.dev).
+slint_note = ""
+# Automatic (system language)
+language_auto = ""
+
+[tray]
+# Start with Windows
+autostart_windows = ""
+# Start at login
+autostart_linux = ""
+# Settings...
+settings = ""
+# Open configuration folder
+config_folder = ""
+# Debug mode (detailed log)
+debug = ""
+# Open log
+open_log = ""
+# Reload configuration
+reload = ""
+# Quit
+quit = ""
+# Trascrittore - ready ({hotkey})
+tip_ready = ""
+# Trascrittore - recording...
+tip_recording = ""
+# Trascrittore - processing...
+tip_working = ""
+# Trascrittore - microphone error: {err}
+tip_mic_error = ""
+# Trascrittore - {err}
+tip_error = ""
+# Update available: {version}. Open Settings > Info > Update now.
+update_notice = ""
+
+[cfg]
+#  - title contains "{text}"
+title_contains = ""
+# App not recognized (default)
+case_default = ""
+# No AI: the transcription is pasted as it is.
+case_raw = ""
+# [The Enter key is pressed after pasting]
+case_enter = ""
+# MODELS\nTranscription: {stt}\nAI (refinement): {llm}
+report_models = ""
+
+[gui]
+# Text correction only: it does not transcribe audio.
+tile_text_only = ""
+# Transcribes on your PC: no data leaves it and no credit is needed. Slower on CPU; the model is loaded only while transcribing. Without a network AI service the text is not corrected: the raw transcription is pasted. {usage}
+tile_local_info = ""
+# Saved key: {key}. To change it, paste a new one.
+key_saved = ""
+# None: text is not corrected
+home_no_correction = ""
+# No key configured
+home_no_key = ""
+# model downloaded
+home_model_yes = ""
+# model not downloaded
+home_model_no = ""
+# key present
+home_key_yes = ""
+# no key
+home_key_no = ""
+# {hotkey}\n{mode}, language {lang}
+home_hotkey = ""
+# press to start and stop
+mode_toggle = ""
+# hold down
+mode_hold = ""
+#  Space used by the models: {size}.
+local_disk = ""
+# Model {id} downloaded and ready.{disk}
+local_ready = ""
+# Model {id} not downloaded yet (about {size}): press Download.{disk}
+local_missing = ""
+# available
+model_available = ""
+# NOT available in your account
+model_unavailable = ""
+# Downloading {id}: {done}{total}
+local_downloading = ""
+#  of {total}
+local_of_total = ""
+# Current priority: {order}.
+order_note = ""
+# Log: {path}
+log_line = ""
+# Program: {exe}\nConfiguration and keys: {dir}\nLog: {log}\n\nTrascrittore audio records from the system default microphone while you use the hotkey, transcribes and corrects the text with the AI services you chose, and pastes it where your cursor is. It lives in the tray and uses few resources.
+general_info = ""
+# At least one service must stay in use.
+min_one_service = ""
+# Model {id} deleted.
+model_deleted = ""
+# Downloading model {id} from Hugging Face...
+model_downloading = ""
+# Model {id} downloaded: local transcription is ready.
+model_done = ""
+# Download failed: {err}
+download_failed = ""
+# Models saved: they apply from the next dictation. Empty fields or fields with spaces are ignored.
+models_saved = ""
+# {name} key removed.
+key_removed = ""
+# Could not remove the key: {err}
+key_remove_failed = ""
+# Verifying...
+verifying = ""
+# Could not remove the token: {err}
+token_remove_failed = ""
+# local build
+build_local = ""
+# build {id}
+build_id = ""
+# local
+version_local = ""
+# Installed version: {version} ({build})
+version_line = ""
+# {line}\nUpdate available: {new} (installed {current}).
+update_available = ""
+# {line}\nLocal build: automatic updates do not apply (online there is {new}).
+update_local_build = ""
+# {line}\nYou are up to date: the latest online version is {new}.
+update_current = ""
+# {line}\nUpdate check failed: {err}
+update_check_failed = ""
+# No GitHub token: enter it below, or download the new installer by hand from the Releases page.
+upd_no_token = ""
+# Checking...
+upd_checking = ""
+# a password prompt will appear
+upd_how_linux = ""
+# Windows may ask for administrator permission
+upd_how_windows = ""
+# {report}\nDownloading and installing: the program restarts in a few seconds ({how}).
+upd_installing = ""
+# {report}\nAlready up to date.
+upd_already = ""
+# {report}\nUpdate failed: {err}
+upd_failed = ""
+# Saved token: {token}. To change it, paste the new one and press "Verify and save".
+token_saved = ""
+# No saved token: automatic updates are not available. Paste a token above ("Create token" opens the page), or update by hand by downloading the new installer from the Releases page.
+token_none = ""
+# Automatic updates: not available (no GitHub token).
+upd_state_unavailable = ""
+# Automatic updates: off.
+upd_state_off = ""
+# Automatic updates: on.
+upd_state_on = ""
+# Automatic updates: not available (no GitHub token). To update, download the new installer by hand from the Releases page.
+upd_info_unavailable = ""
+# Automatic updates: OFF (turn them on below).
+upd_info_off = ""
+# Automatic updates: on. Checking...
+upd_info_on = ""
+# Enter the {name} API key.
+key_enter = ""
+# The key must not contain spaces.
+key_no_spaces = ""
+# The local service uses no keys.
+key_local = ""
+# {name} key NOT valid or network unreachable.\n{err}
+key_invalid = ""
+# The key works but could not be saved: {err}
+key_save_failed = ""
+# {name} key valid.\n{lines}
+key_valid = ""
+# {name} key valid and saved.\n{lines}
+key_valid_saved = ""
+# Enter the GitHub token (see the README).
+token_enter = ""
+# The token must not contain spaces.
+token_no_spaces = ""
+# Token not usable.\n{err}
+token_unusable = ""
+# The token works but could not be saved: {err}
+token_save_failed = ""
+# Token valid. Automatic updates on.
+token_valid = ""
+# Token valid and saved. Automatic updates on.
+token_valid_saved = ""
+# {head}\nThere is a newer version ({new}), but automatic updates are off: tick the box above, or use "Update now".
+token_newer_off = ""
+# {head}\nNewer online version {new}: downloading it and restarting the program in a few seconds.
+token_newer_on = ""
+# {head}\n{line}\nYou already have the latest version.
+token_latest = ""
+
+[failure]
+# out of credit
+out_of_credit = ""
+# key rejected
+bad_key = ""
+# request limit
+rate_limited = ""
+# service unreachable
+unreachable = ""
+# error
+other = ""
+
+[status]
+# Model not downloaded
+no_model = ""
+# No key
+no_key = ""
+# Paused: {why} ({min} min)
+paused = ""
+# Ready
+ready = ""
+
+[usage]
+# Since start: {calls} transcriptions.
+local_line = ""
+# Since start: {calls} calls, {tokens} tokens. The remaining credit cannot be read via API.
+line = ""
+# Groq does not provide the remaining credit: the free plan has request and token limits.\nHere you see the values read from Groq's replies (they appear after the first use) and the counters since start.\n
+intro = ""
+# No usage yet.
+none_yet = ""
+#   <- last used
+last_used = ""
+# {model}{last}\n  since start: {calls} calls, {tokens} tokens\n  requests: {req_left} left of {req_limit} (reset in {req_reset})\n  tokens: {tok_left} left of {tok_limit} (reset in {tok_reset})\n
+model_block = ""
+#   LIMIT REACHED: paused for another {secs} s, using the fallback models\n
+limit_hit = ""
+
+[size]
+# very fast, less accurate
+tiny = ""
+# recommended
+base = ""
+# more accurate, slower
+small = ""
+# very accurate, slow on CPU
+medium = ""
+
+[fmt]
+# .
+decimal_separator = ""
+
+[err]
+# does not transcribe audio
+no_audio = ""
+# does not correct text
+no_correction = ""
+# no default microphone
+no_mic = ""
+# unsupported audio format: {format}
+audio_format = ""
+# clipboard not accessible
+clipboard = ""
+# paste key not found on the keyboard
+paste_key = ""
+# no AI service ready (the key or the local model is missing: AI section of Settings)
+no_provider_ready = ""
+# no AI service answered ({errors})
+all_providers_failed = ""
+# network: {msg}
+network = ""
+# no model configured
+no_model_configured = ""
+# limit reached on all models ({last})
+all_models_limited = ""
+# audio not suitable for Whisper: {spec}
+audio_whisper = ""
+# invalid model path
+model_path = ""
+# local model cannot be loaded: {err}
+model_load = ""
+# local transcription failed: {err}
+local_failed = ""
+# cannot create the models folder: {err}
+models_dir = ""
+# download refused (HTTP {status})
+download_refused = ""
+# cannot create the file: {err}
+file_create = ""
+# download cancelled
+download_cancelled = ""
+# the downloaded file is not a Whisper model
+not_whisper = ""
+# write error: {err}
+write = ""
+# incomplete download: try again
+download_incomplete = ""
+# the downloaded file is corrupted (different SHA-256): try again
+download_corrupt = ""
+# cannot complete the model: {err}
+model_finish = ""
+# {name} is not in the release
+asset_missing = ""
+# asset without url
+asset_no_url = ""
+# unexpected asset url
+asset_bad_url = ""
+# release without commit
+release_no_commit = ""
+# the release "{tag}" has no YYYY.MM.DD.N version
+release_bad_tag = ""
+# download: HTTP {status}
+download_http = ""
+# downloaded file not valid (different SHA-256): update cancelled
+update_sha = ""
+# writing {path}: {err}
+write_file = ""
+# cannot replace the executable: {err}
+replace_exe = ""
+# cannot install the new executable: {err}
+install_exe = ""
+# the .deb package has not been published in the release yet: try again in a few minutes
+deb_missing = ""
+# pkexec not available: {err}
+pkexec = ""
+# installation cancelled or failed (wrong password or apt busy)
+install_cancelled = ""
+# restart: {err}
+restart = ""
+
+[gh]
+#  (GitHub: "{message}")
+detail = ""
+# GitHub does not accept the token (wrong, revoked or expired){detail}.
+bad_token = ""
+# The token is valid and sees the repository, but no release has been published yet (publishing takes a couple of minutes after every change): try again later{detail}.
+no_release = ""
+# The token does not see the repository aleDiPi/audio_trascriptor: on the creation page check Resource owner = aleDiPi, Repository access = only audio_trascriptor and Permissions > Contents = Read-only.{detail}
+no_access = ""
+# GitHub denies access (insufficient permissions or too many requests){detail}.
+forbidden = ""
+# GitHub HTTP 404: release not found or token without access to the repository{detail}.
+not_found = ""
+# GitHub HTTP {status}{detail}.
+http = ""

@@ -20,7 +20,7 @@ pub struct ApiError {
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.status == 0 {
-            write!(f, "rete: {}", self.msg)
+            write!(f, "{}", crate::i18n::tf("err.network", &[("msg", &self.msg)]))
         } else {
             write!(f, "{} HTTP {}: {}", self.provider, self.status, self.msg)
         }
@@ -114,17 +114,17 @@ pub fn with_fallback<T>(
     mut call: impl FnMut(&str) -> Result<T, ApiError>,
 ) -> Result<(T, String), ApiError> {
     let mut candidates: Vec<&String> = models.iter().filter(|m| !is_limited(m)).collect();
-    crate::config::debug(|| format!("modelli candidati: {candidates:?} (in pausa per limite: {})", models.len() - candidates.len()));
+    crate::config::debug(|| format!("candidate models: {candidates:?} (paused by limit: {})", models.len() - candidates.len()));
     if candidates.is_empty() {
         candidates = models.iter().collect(); // tutti in pausa: riprova comunque
     }
-    let mut last = String::from("nessun modello configurato");
+    let mut last = crate::i18n::t("err.no_model_configured");
     for m in candidates {
         match call(m) {
             Ok(v) => return Ok((v, m.clone())),
             Err(e) if e.status == 429 => {
                 mark_limited(m, e.retry_after.unwrap_or(60));
-                crate::config::log(&format!("limite Groq raggiunto su {m}: passo al modello successivo (pausa {} s)", e.retry_after.unwrap_or(60)));
+                crate::config::log(&format!("Groq limit reached on {m}: moving to the next model (pause {} s)", e.retry_after.unwrap_or(60)));
                 last = format!("{m}: {e}");
             }
             Err(e) => return Err(e),
@@ -134,7 +134,7 @@ pub fn with_fallback<T>(
         provider: "Groq",
         status: 429,
         retry_after: None,
-        msg: format!("limite raggiunto su tutti i modelli ({last})"),
+        msg: crate::i18n::tf("err.all_models_limited", &[("last", &last)]),
     })
 }
 
@@ -148,32 +148,32 @@ pub fn report() -> String {
 
 pub fn report_at(now: u64) -> String {
     let st = STATE.lock().unwrap();
-    let mut s = String::from(
-        "Groq non fornisce il credito residuo: il piano gratuito ha limiti di richieste e token.\n\
-         Qui vedi i valori letti dalle risposte di Groq (compaiono dopo il primo utilizzo) e i contatori dall'avvio.\n",
-    );
+    let mut s = crate::i18n::t("usage.intro");
     let used: Vec<&Snapshot> = st.iter().filter(|x| x.calls > 0 || x.limited_until > now).collect();
     if used.is_empty() {
-        s.push_str("\nNessun utilizzo ancora.");
+        s.push_str(&format!("\n{}", crate::i18n::t("usage.none_yet")));
         return s;
     }
     let newest = used.iter().map(|x| x.last_seq).max().unwrap_or(0);
     for x in used {
-        s.push_str(&format!(
-            "\n{}{}\n  dall'avvio: {} chiamate, {} token\n  richieste: {} rimaste su {} (reset tra {})\n  token: {} rimasti su {} (reset tra {})\n",
-            x.model,
-            if x.last_seq == newest && newest > 0 { "  <- ultimo usato" } else { "" },
-            x.calls,
-            x.tokens,
-            dash(&x.remaining_requests),
-            dash(&x.limit_requests),
-            dash(&x.reset_requests),
-            dash(&x.remaining_tokens),
-            dash(&x.limit_tokens),
-            dash(&x.reset_tokens),
+        s.push('\n');
+        s.push_str(&crate::i18n::tf(
+            "usage.model_block",
+            &[
+                ("model", &x.model),
+                ("last", &if x.last_seq == newest && newest > 0 { crate::i18n::t("usage.last_used") } else { String::new() }),
+                ("calls", &x.calls.to_string()),
+                ("tokens", &x.tokens.to_string()),
+                ("req_left", dash(&x.remaining_requests)),
+                ("req_limit", dash(&x.limit_requests)),
+                ("req_reset", dash(&x.reset_requests)),
+                ("tok_left", dash(&x.remaining_tokens)),
+                ("tok_limit", dash(&x.limit_tokens)),
+                ("tok_reset", dash(&x.reset_tokens)),
+            ],
         ));
         if x.limited_until > now {
-            s.push_str(&format!("  LIMITE RAGGIUNTO: in pausa ancora {} s, uso i modelli di riserva\n", x.limited_until - now));
+            s.push_str(&crate::i18n::tf("usage.limit_hit", &[("secs", &(x.limited_until - now).to_string())]));
         }
     }
     s
@@ -220,7 +220,7 @@ mod tests {
         let r: Result<(u8, String), ApiError> = with_fallback(&models, |_| Err(err(429, None)));
         let e = r.unwrap_err();
         assert_eq!(e.status, 429);
-        assert!(e.to_string().contains("limite raggiunto su tutti i modelli"));
+        assert!(e.to_string().contains("limit reached on all models"));
         assert!(is_limited("t3-a"));
     }
 
@@ -235,8 +235,8 @@ mod tests {
         record("t4-model", &[], 30); // senza header: i valori precedenti restano
         let r = report_at(now());
         assert!(r.contains("t4-model"));
-        assert!(r.contains("14399 rimaste su 14400"));
-        assert!(r.contains("2 chiamate, 150 token"));
+        assert!(r.contains("14399 left of 14400"));
+        assert!(r.contains("2 calls, 150 tokens"));
     }
 
     #[test]

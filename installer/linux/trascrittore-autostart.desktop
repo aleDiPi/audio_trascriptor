@@ -1,7 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Trascrittore audio
-Comment=Dettatura vocale nella tray
+Comment=Voice dictation in the tray
+Comment[it]=Dettatura vocale nella tray
 Exec=trascrittore --autostart
 Icon=trascrittore
 Terminal=false

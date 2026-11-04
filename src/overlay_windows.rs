@@ -67,7 +67,7 @@ pub fn start() {
             null(),
         );
         if hwnd.is_null() {
-            crate::config::log("icona di registrazione: finestra non creata");
+            crate::config::log("recording icon: window not created");
             return;
         }
         HWND_SELF.store(hwnd as isize, Ordering::Release);
