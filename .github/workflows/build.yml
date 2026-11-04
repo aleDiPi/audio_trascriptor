@@ -1,4 +1,4 @@
-name: Build Windows
+name: Build
 on:
   push:
     branches: [main]
@@ -11,6 +11,8 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     env:
       # whisper.cpp (trascrizione locale) genera i binding con libclang, gia' installato sul runner
       LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
@@ -19,6 +21,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Versione AAAA.MM.GG.N
+        id: version
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -33,6 +36,7 @@ jobs:
           }
           $ver = "$day." + ($n + 1)
           "TRASCRITTORE_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Versione $ver"
       - run: cargo test
       - run: cargo build --release
@@ -80,3 +84,39 @@ jobs:
             gh release edit latest --target $env:GITHUB_SHA --latest=false --title "Ponte per versioni precedenti" --notes $notes
             if ($LASTEXITCODE -ne 0) { exit 1 }
           }
+
+  # Pacchetto .deb per Linux Mint 22 / Ubuntu 24.04. Parte dopo la build di Windows per usare la stessa versione
+  # e caricare il .deb nella stessa release.
+  linux:
+    needs: build
+    runs-on: ubuntu-24.04
+    env:
+      TRASCRITTORE_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Librerie di sviluppo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev libfontconfig1-dev libxkbcommon-dev cmake clang pkg-config
+      - run: cargo test
+      - run: cargo build --release
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - name: Pacchetto .deb
+        run: cargo deb --no-build --deb-version "$TRASCRITTORE_VERSION" -o trascrittore.deb
+      - name: Controllo del pacchetto
+        run: |
+          dpkg-deb -I trascrittore.deb
+          dpkg-deb -c trascrittore.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trascrittore-linux-deb
+          path: trascrittore.deb
+      - name: Carica il .deb nella release della versione (solo su main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "v$TRASCRITTORE_VERSION" trascrittore.deb --clobber

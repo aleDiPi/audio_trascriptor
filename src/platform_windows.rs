@@ -29,6 +29,20 @@ pub fn single_instance(wait_old: bool) -> bool {
     false
 }
 
+/// Toglie i resti di un aggiornamento precedente.
+pub fn cleanup_after_update() {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::fs::remove_file(exe.with_extension("exe.old")); // resto di un aggiornamento
+    }
+    // installer scaricato da un aggiornamento precedente (se e' ancora in uso resta fino al prossimo avvio)
+    let _ = std::fs::remove_dir_all(std::env::temp_dir().join("Trascrittore-Update"));
+}
+
+/// Apre un file, una cartella o un indirizzo web con il programma predefinito.
+pub fn open(target: impl AsRef<std::ffi::OsStr>) {
+    let _ = std::process::Command::new("explorer").arg(target).spawn();
+}
+
 /// (nome exe in minuscolo, titolo finestra) dell'app in primo piano.
 pub fn foreground_app() -> (String, String) {
     unsafe {

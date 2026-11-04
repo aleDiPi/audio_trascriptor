@@ -1,4 +1,4 @@
-//! Registrazione dal microfono predefinito di Windows al momento dell'avvio.
+//! Registrazione dal microfono predefinito del sistema al momento dell'avvio.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample, SizedSample};
@@ -99,7 +99,7 @@ impl Recorder {
         let peak = samples.iter().fold(0f32, |m, s| m.max(s.abs()));
         crate::config::debug(|| format!("picco del segnale {peak:.3}"));
         if peak < 0.005 {
-            crate::config::debug(|| "audio silenzioso (picco < 0.005): scartato, controlla il microfono predefinito di Windows".into());
+            crate::config::debug(|| "audio silenzioso (picco < 0.005): scartato, controlla il microfono predefinito del sistema".into());
             return None; // silenzio: evita allucinazioni di Whisper
         }
         let pcm = resample(&samples, self.rate, TARGET_RATE);

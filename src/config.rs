@@ -167,6 +167,7 @@ impl Config {
     }
 
     /// Testo con modelli e prompt di ogni caso.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn prompt_report(&self) -> String {
         let mut s = format!(
             "MODELLI\nTrascrizione: {}\nAI (rifinitura): {}",
@@ -181,19 +182,46 @@ impl Config {
 
     /// Regola da applicare all'app in primo piano (None = prompt predefinito).
     pub fn rule_for(&self, exe: &str, title: &str) -> Option<&AppRule> {
-        let exe = exe.to_lowercase();
+        let exe = exe_key(exe);
         let title = title.to_lowercase();
         self.apps.iter().find(|r| {
-            r.exe.iter().any(|e| e.eq_ignore_ascii_case(&exe))
+            r.exe.iter().any(|e| exe_key(e) == exe)
                 && (r.title_contains.is_empty() || title.contains(&r.title_contains.to_lowercase()))
         })
     }
 }
 
-/// Cartella di lavoro: la prima tra cwd, cartella dell'exe, %ProgramData%\Trascrittore (installer),
+/// Cartella di lavoro. Linux: `~/.config/trascrittore`. Windows: la prima tra cwd, cartella dell'exe, %ProgramData%\Trascrittore (installer),
 /// %APPDATA%\Trascrittore che contiene config.toml; altrimenti viene creata %APPDATA%\Trascrittore.
 pub fn dir() -> &'static Path {
     DIR.get_or_init(|| {
+        #[cfg(target_os = "linux")]
+        {
+            let dir = linux_data_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            for (name, default) in [("config.toml", DEFAULT_CONFIG), (".env", DEFAULT_ENV)] {
+                if !dir.join(name).exists() {
+                    let _ = std::fs::write(dir.join(name), default);
+                }
+            }
+            restrict_permissions(&dir.join(".env"));
+            return dir;
+        }
+        #[cfg(not(target_os = "linux"))]
+        windows_dir()
+    })
+}
+
+/// Il file con le chiavi e' leggibile solo dal proprietario (Linux).
+#[cfg(unix)]
+fn restrict_permissions(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(target_os = "linux"))]
+fn windows_dir() -> PathBuf {
+    {
         let mut candidates: Vec<PathBuf> = Vec::new();
         if let Ok(d) = std::env::current_dir() {
             candidates.push(d);
@@ -219,7 +247,7 @@ pub fn dir() -> &'static Path {
             let _ = std::fs::write(appdata.join(".env"), DEFAULT_ENV);
         }
         appdata
-    })
+    }
 }
 
 pub fn load() -> Config {
@@ -258,6 +286,26 @@ fn load_raw() -> Config {
             Config::default()
         }
     }
+}
+
+/// Nome del programma in minuscolo e senza ".exe": cosi' "chrome.exe" (Windows) e "chrome" (Linux) coincidono.
+fn exe_key(name: &str) -> String {
+    let n = name.trim().to_lowercase();
+    n.strip_suffix(".exe").map(str::to_string).unwrap_or(n)
+}
+
+/// Cartella di configurazione su Linux: `$XDG_CONFIG_HOME/trascrittore`, altrimenti `~/.config/trascrittore`.
+pub fn linux_config_home(xdg: Option<&str>, home: Option<&str>) -> PathBuf {
+    match (xdg.filter(|x| !x.is_empty()), home.filter(|h| !h.is_empty())) {
+        (Some(x), _) => PathBuf::from(x),
+        (None, Some(h)) => PathBuf::from(h).join(".config"),
+        _ => PathBuf::from("."),
+    }
+}
+
+/// Cartella dati del programma su Linux (config.toml, .env, log, modelli): `~/.config/trascrittore`.
+fn linux_data_dir() -> PathBuf {
+    linux_config_home(std::env::var("XDG_CONFIG_HOME").ok().as_deref(), std::env::var("HOME").ok().as_deref()).join("trascrittore")
 }
 
 /// Valore di una variabile: ambiente di Windows oppure riga NOME=valore nel file .env.
@@ -369,7 +417,10 @@ fn save_env_value(name: &str, value: &str) -> std::io::Result<()> {
     }
     let path = dir().join(".env");
     let old = std::fs::read_to_string(&path).unwrap_or_default();
-    std::fs::write(path, set_env_value(&old, name, value))
+    std::fs::write(&path, set_env_value(&old, name, value))?;
+    #[cfg(unix)]
+    restrict_permissions(&path);
+    Ok(())
 }
 
 /// Salva il token degli aggiornamenti in .env.
@@ -604,7 +655,7 @@ pub fn open_log() {
     if !path.exists() {
         let _ = std::fs::write(&path, "");
     }
-    let _ = std::process::Command::new("explorer").arg(&path).spawn();
+    crate::platform::open(&path);
 }
 
 /// Riga di debug, scritta solo in modalita' debug. Il testo si costruisce solo se serve.
@@ -706,6 +757,30 @@ fn write_log_at(path: &Path, max_bytes: u64, level: &str, msg: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rules_match_with_or_without_exe_suffix() {
+        let c: Config = toml::from_str(
+            r#"
+            [[apps]]
+            exe = ["chrome.exe", "thunderbird"]
+            prompt = "x"
+            "#,
+        )
+        .unwrap();
+        assert!(c.rule_for("chrome", "").is_some()); // Linux: nome senza .exe
+        assert!(c.rule_for("Chrome.EXE", "").is_some()); // Windows
+        assert!(c.rule_for("thunderbird.exe", "").is_some());
+        assert!(c.rule_for("firefox", "").is_none());
+    }
+
+    #[test]
+    fn linux_config_home_follows_xdg() {
+        assert_eq!(linux_config_home(Some("/x/cfg"), Some("/home/a")), PathBuf::from("/x/cfg"));
+        assert_eq!(linux_config_home(None, Some("/home/a")), PathBuf::from("/home/a/.config"));
+        assert_eq!(linux_config_home(Some(""), Some("/home/a")), PathBuf::from("/home/a/.config"));
+        assert_eq!(linux_config_home(None, None), PathBuf::from("."));
+    }
 
     fn example() -> Config {
         toml::from_str(DEFAULT_CONFIG).expect("config.example.toml deve essere valido")

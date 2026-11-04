@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Trascrittore audio
+Comment=Dettatura vocale nella tray
+Exec=trascrittore --autostart
+Icon=trascrittore
+Terminal=false
+X-GNOME-Autostart-enabled=true

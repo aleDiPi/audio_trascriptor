@@ -99,6 +99,7 @@ fn create_window() -> Result<Ui, slint::PlatformError> {
     win.set_ver_info(update_info_initial().into());
     win.set_token_status(token_status().into());
     // i controlli dei suoni si impostano solo qui: aggiornarli col timer sposterebbe il cursore mentre lo si trascina
+    win.set_linux(cfg!(target_os = "linux"));
     win.set_autostart(platform::autostart_enabled());
     win.set_sounds(config::sounds_enabled());
     win.set_sound_volume(config::sound_volume() as f32);
@@ -405,7 +406,7 @@ fn refresh(win: &SettingsWindow) {
     let exe = std::env::current_exe().map(|e| e.display().to_string()).unwrap_or_default();
     win.set_general_info(
         format!(
-            "Programma: {exe}\nConfigurazione e chiavi: {}\nLog: {}\n\nTrascrittore audio registra dal microfono predefinito di Windows mentre usi la scorciatoia, trascrive e corregge il testo con i servizi AI scelti e lo incolla dove hai il cursore. Sta nella tray e usa poche risorse.",
+            "Programma: {exe}\nConfigurazione e chiavi: {}\nLog: {}\n\nTrascrittore audio registra dal microfono predefinito del sistema mentre usi la scorciatoia, trascrive e corregge il testo con i servizi AI scelti e lo incolla dove hai il cursore. Sta nella tray e usa poche risorse.",
             config::dir().display(),
             config::log_path().display()
         )
@@ -418,7 +419,7 @@ fn refresh_in_loop(weak: &slint::Weak<SettingsWindow>) {
 }
 
 fn open_url(url: &str) {
-    let _ = std::process::Command::new("explorer").arg(url).spawn();
+    platform::open(url);
 }
 
 fn provider_by_id(id: &str) -> Option<Provider> {
@@ -447,7 +448,7 @@ fn wire(win: &SettingsWindow) {
     win.on_open_github_link(|| open_url(GITHUB_TOKEN_URL));
     win.on_open_log(config::open_log);
     win.on_open_folder(|| {
-        let _ = std::process::Command::new("explorer").arg(config::dir()).spawn();
+        platform::open(config::dir());
     });
 
     win.on_toggle_overlay(config::set_overlay);
@@ -770,7 +771,8 @@ fn manual_update(weak: slint::Weak<SettingsWindow>, apply: bool) {
         let report = update_report(&token);
         let newer = updater::fetch_latest(&token).map_or(false, |r| release::needs_update(release::current_version(), r.version));
         if apply && newer {
-            post(format!("{report}\nScarico e installo: il programma si riavvia tra pochi secondi (Windows puo' chiedere i permessi di amministratore)."), false);
+            let how = if cfg!(target_os = "linux") { "compare la richiesta della password" } else { "Windows puo' chiedere i permessi di amministratore" };
+            post(format!("{report}\nScarico e installo: il programma si riavvia tra pochi secondi ({how})."), false);
             std::thread::sleep(Duration::from_secs(3)); // il tempo di leggere il messaggio
             match updater::check_and_apply(&token) {
                 Ok(_) => post(format!("{report}\nGia' aggiornato."), true),

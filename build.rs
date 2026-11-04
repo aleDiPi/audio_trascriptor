@@ -1,5 +1,10 @@
 //! Incorpora icona e manifest (DPI per monitor) nell'exe e compila l'interfaccia Slint (ui/settings.slint).
 fn main() {
+    // `desktop` = sistemi supportati dal programma (Windows e Linux); altrove compila solo la parte pura.
+    println!("cargo:rustc-check-cfg=cfg(desktop)");
+    if matches!(std::env::var("CARGO_CFG_TARGET_OS").as_deref(), Ok("windows") | Ok("linux")) {
+        println!("cargo:rustc-cfg=desktop");
+    }
     println!("cargo:rerun-if-changed=assets/app.rc");
     println!("cargo:rerun-if-changed=assets/icon.ico");
     println!("cargo:rerun-if-changed=assets/app.manifest");

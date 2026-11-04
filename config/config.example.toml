@@ -77,28 +77,28 @@ dictionary = []
 
 # Regole per applicazione. Se piu' regole corrispondono vince la prima.
 #   name           = (opzionale) categoria mostrata nelle Impostazioni
-#   exe            = nomi del processo in primo piano (senza distinzione maiuscole/minuscole)
+#   exe            = nomi del processo in primo piano (maiuscole e ".exe" non contano: "chrome.exe" vale anche "chrome" su Linux)
 #   title_contains = (opzionale) testo che deve comparire nel titolo della finestra
 #   prompt         = istruzioni extra per l'AI, aggiunte al prompt di base
 #   raw            = true: incolla la trascrizione senza passare dall'AI
 #   send_enter     = true: preme Invio dopo l'incolla (sostituisce lo script claude-auto-invio.ahk)
-#   paste          = "ctrl+v" (default) oppure "shift+insert" (per alcuni terminali)
+#   paste          = "ctrl+v" (default), "shift+insert" o "ctrl+shift+v" (per i terminali)
 
 [[apps]]
 name = "Email"
-exe = ["outlook.exe", "olk.exe", "thunderbird.exe"]
+exe = ["outlook.exe", "olk.exe", "thunderbird.exe", "thunderbird"]
 prompt = """CONTESTO: stai scrivendo in un client di posta. Usa un tono professionale e cortese, paragrafi chiari. \
 Non inventare saluti o firme che non sono stati detti."""
 
 [[apps]]
 name = "Chat"
-exe = ["slack.exe", "teams.exe", "ms-teams.exe", "discord.exe", "telegram.exe", "whatsapp.exe"]
+exe = ["slack.exe", "teams.exe", "ms-teams.exe", "discord.exe", "telegram.exe", "whatsapp.exe", "slack", "discord", "telegram-desktop", "signal-desktop"]
 prompt = """CONTESTO: stai scrivendo in una chat. Mantieni il messaggio breve e naturale, tono informale ma corretto. \
 Niente saluti o chiusure aggiunti."""
 
 [[apps]]
 name = "Editor di codice"
-exe = ["code.exe", "devenv.exe", "idea64.exe", "pycharm64.exe", "cursor.exe"]
+exe = ["code.exe", "devenv.exe", "idea64.exe", "pycharm64.exe", "cursor.exe", "code", "cursor", "codium", "gedit", "xed", "pycharm", "idea"]
 prompt = """CONTESTO: il testo e' destinato a un editor di codice (commento, commit, istruzione tecnica). \
 Sii conciso e preciso, mantieni i termini tecnici in inglese, non usare Markdown."""
 
@@ -107,16 +107,23 @@ name = "Terminale"
 exe = ["windowsterminal.exe", "cmd.exe", "powershell.exe", "pwsh.exe"]
 raw = true
 
+# Terminali di Linux (Mint): incollano con Ctrl+Maiusc+V
+[[apps]]
+name = "Terminale Linux"
+exe = ["gnome-terminal-server", "xfce4-terminal", "konsole", "tilix", "xterm", "alacritty", "kitty", "terminator", "x-terminal-emulator"]
+raw = true
+paste = "ctrl+shift+v"
+
 [[apps]]
 name = "Documenti"
-exe = ["winword.exe", "notepad.exe", "obsidian.exe", "onenote.exe"]
+exe = ["winword.exe", "notepad.exe", "obsidian.exe", "onenote.exe", "libreoffice", "soffice.bin", "obsidian", "xreader", "mousepad"]
 prompt = """CONTESTO: stai scrivendo un documento. Usa prosa ben scritta, con paragrafi e punteggiatura corretti. \
 Mantieni il contenuto e lo stile dell'autore."""
 
 # App Claude desktop: incolla e invia subito il messaggio
 [[apps]]
 name = "Claude"
-exe = ["claude.exe"]
+exe = ["claude.exe", "claude"]
 send_enter = true
 prompt = """CONTESTO: il testo e' un messaggio per un assistente AI. Mantieni la richiesta fedele a quanto detto, \
 senza rispondere tu."""

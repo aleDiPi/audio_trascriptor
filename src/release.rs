@@ -7,6 +7,8 @@ use std::fmt;
 pub const ASSET_PREFIX: &str = "https://api.github.com/repos/aleDiPi/audio_trascriptor/releases/assets/";
 pub const SETUP_NAME: &str = "Trascrittore-Setup.exe";
 pub const EXE_NAME: &str = "trascrittore.exe";
+/// Pacchetto per Linux (Debian/Ubuntu/Linux Mint), caricato nella stessa release dalla GitHub Action.
+pub const DEB_NAME: &str = "trascrittore.deb";
 /// Se compare nel testo della release, questo aggiornamento richiede di rieseguire l'installer.
 pub const INSTALLER_MARKER: &str = "[installer]";
 
@@ -51,6 +53,8 @@ pub struct Release {
     pub exe: Asset,
     /// installer completo: usato per le modifiche strutturali o se lo scambio in-place fallisce
     pub setup: Asset,
+    /// pacchetto .deb per Linux (None se non e' ancora stato caricato nella release)
+    pub deb: Option<Asset>,
 }
 
 /// Commit da cui e' stato compilato questo eseguibile (impostato dalla GitHub Action).
@@ -90,6 +94,7 @@ pub fn parse_release(json: &str) -> Result<Release, String> {
         installer_required: v["body"].as_str().map_or(false, |b| b.contains(INSTALLER_MARKER)),
         exe: find_asset(&v, EXE_NAME)?,
         setup: find_asset(&v, SETUP_NAME)?,
+        deb: find_asset(&v, DEB_NAME).ok(),
     })
 }
 
@@ -128,6 +133,7 @@ pub fn needs_update(current: Option<Version>, remote: Version) -> bool {
 
 /// L'installer scaricato va eseguito solo se il suo SHA-256 coincide con quello dichiarato da GitHub.
 /// Vero se si puo' creare e cancellare un file nella cartella (es. non in Program Files senza amministratore).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn dir_writable(dir: &std::path::Path) -> bool {
     let probe = dir.join(format!(".scrittura-{}.tmp", std::process::id()));
     let ok = std::fs::write(&probe, b"").is_ok();
@@ -165,7 +171,18 @@ mod tests {
         assert_eq!(r.version, Version(2026, 10, 25, 3));
         assert!(!r.installer_required);
         assert_eq!(r.exe.digest.as_deref(), Some("sha256:AABB"));
+        assert!(r.deb.is_none()); // il .deb viene caricato dopo: la release resta valida per Windows
         assert!(r.exe.url.ends_with("/1") && r.setup.url.ends_with("/2"));
+    }
+
+    #[test]
+    fn finds_the_deb_when_present() {
+        let with_deb = json(ASSET_PREFIX, "x").replace(
+            r#"{"name":"altro.txt""#,
+            &format!(r#"{{"name":"trascrittore.deb","url":"{ASSET_PREFIX}9","digest":"sha256:EEFF"}},{{"name":"altro.txt""#),
+        );
+        let r = parse_release(&with_deb).unwrap();
+        assert_eq!(r.deb.unwrap().digest.as_deref(), Some("sha256:EEFF"));
     }
 
     #[test]
