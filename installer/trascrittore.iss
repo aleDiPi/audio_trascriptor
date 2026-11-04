@@ -29,7 +29,8 @@ SetupIconFile=..\assets\icon.ico
 AppMutex=Local\TrascrittoreAudioSingleInstance
 
 [Languages]
-Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
+; Prima pagina dell'installer: avviso su servizi AI di terzi e privacy (obbligo di accettarlo per proseguire). Una riga LicenseFile per ogni lingua.
+Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"; LicenseFile: "..\legal\DISCLAIMER.it.txt"
 
 [Types]
 Name: "compact"; Description: "Solo il programma (consigliato)"

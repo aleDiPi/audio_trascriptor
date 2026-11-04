@@ -1,0 +1,100 @@
+Trascrittore Audio Source-Available License, version 1.0
+
+Copyright (c) 2026 aleDiPi (the "Author"). All rights reserved, except as
+expressly granted below.
+
+This is a "source-available" license, NOT an open-source license. The source
+code is published so that anyone can read and audit it. It is not published so
+that it can be copied, reused or redistributed.
+
+Italian courtesy translation: legal/LICENSE.it.txt. The two texts have the
+same legal value; if they differ, the English text prevails.
+
+1. DEFINITIONS
+
+"Software" means the source code, documentation, assets and translation files
+in this repository. "Official Binaries" means the executables, installers and
+packages published by the Author in the GitHub Releases of this repository.
+"Contribution" means anything you submit to the Author for inclusion in the
+Software (code, translations, text, images), for example through a pull
+request.
+
+2. WHAT YOU MAY DO
+
+a) Read. You may view, read, study and audit the Software, online or in a
+   copy that is strictly necessary to do so.
+b) Use the Official Binaries, free of charge, for any lawful purpose,
+   personal or commercial, on your own devices, subject to sections 5 and 6.
+c) Contribute. You may use GitHub's own "fork" and "pull request" features,
+   and keep a private local working copy, solely to prepare, test and submit
+   Contributions (for example a new translation) to this repository. A
+   private build made for this purpose must not be shared with anyone.
+
+3. WHAT YOU MAY NOT DO
+
+Without the Author's prior written permission you may not:
+a) copy, publish, host, distribute, sublicense, sell, rent or otherwise make
+   available the Software, in whole or in part, in source or binary form,
+   including modified forks, mirrors, archives and repackaged builds;
+b) create or distribute derivative works of the Software, or use any part of
+   it in another project, product or service;
+c) distribute your own builds of the Software, or modified versions of the
+   Official Binaries;
+d) use the Software, or any part of it, to train, fine-tune or evaluate
+   machine-learning models;
+e) remove or alter copyright, license or attribution notices;
+f) use the Author's name, the program's name or its icon to suggest that a
+   modified or third-party product is endorsed by or originates from the
+   Author.
+
+4. CONTRIBUTIONS
+
+By submitting a Contribution you declare that you are its author (or that you
+have the right to submit it) and you grant the Author a perpetual, worldwide,
+irrevocable, royalty-free, non-exclusive license, with the right to
+sublicense, to use, reproduce, modify, translate, distribute and relicense the
+Contribution as part of the Software, under this or any other license. You
+keep the copyright in your Contribution. The Author may credit contributors
+by name or nickname and may refuse or remove any Contribution.
+
+5. THIRD-PARTY COMPONENTS AND SERVICES
+
+The Software is built with third-party components that are licensed under
+their own terms (see THIRD_PARTY_NOTICES.md). This license does not restrict
+any right you have under those terms. The Software can send your audio and
+text to third-party AI services that you choose and configure; the Author does
+not operate those services and is not responsible for them. Read
+legal/DISCLAIMER.en.txt and legal/PRIVACY.en.md.
+
+6. NO WARRANTY
+
+To the maximum extent permitted by law, the Software and the Official
+Binaries are provided "AS IS", without warranty of any kind, express or
+implied, including merchantability, fitness for a particular purpose,
+accuracy of transcriptions, and non-infringement.
+
+7. LIMITATION OF LIABILITY
+
+To the maximum extent permitted by law, the Author is not liable for any
+direct, indirect, incidental, special or consequential damage, loss of data
+or profit, costs of third-party services, or any claim arising from the use of
+the Software. Nothing in this license excludes or limits liability that cannot
+be excluded or limited under mandatory law, in particular liability for
+willful misconduct or gross negligence, for death or personal injury, or the
+rights that consumers have under mandatory consumer-protection law.
+
+8. TERMINATION
+
+Your rights under this license end automatically if you breach it. On
+termination you must stop using and delete any copy of the Software you hold,
+other than what the law lets you keep. Sections 3 to 9 survive termination.
+
+9. GENERAL
+
+This license is governed by Italian law, without prejudice to the mandatory
+law of the country where a consumer lives. The competent court is determined
+by the applicable mandatory rules. If a provision is unenforceable, the rest
+remains in force. Permissions not expressly granted are reserved.
+
+To ask for permission to do something this license does not allow, open an
+issue or contact the Author through the GitHub profile "aleDiPi".

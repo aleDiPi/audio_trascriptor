@@ -1,0 +1,39 @@
+IMPORTANT NOTICE - PLEASE READ
+
+Trascrittore Audio turns your voice into text. To do that it can send your
+voice recording and the transcribed text to third-party AI services that you
+choose and configure with your own account and API key: Groq, OpenAI and
+Anthropic. It can also transcribe on your own PC with a local Whisper model;
+nothing leaves your computer only if you leave all AI keys empty.
+
+1. THIRD-PARTY AI SERVICES. Whatever you send to those services is processed
+   by them, under their own terms and privacy policies, not by the Author of
+   this program. The Author does NOT control and does NOT guarantee how these
+   services store, retain, use (for example to improve or train their models),
+   share or protect your data, nor where in the world they process it (these
+   providers are usually based outside the European Union). Read their terms
+   before using them and choose settings and plans accordingly.
+
+2. SENSITIVE CONTENT. Do not dictate passwords, health data, financial
+   details, trade secrets or other confidential or personal data, of yours or
+   of other people, unless the service you chose is suitable for it and you
+   have the right to send it. If you use the program at work, check your
+   organization's rules first. For maximum privacy download a local
+   Whisper model and leave all AI keys empty.
+
+3. OTHER PEOPLE. Do not record or transcribe other people's voices without
+   having the consent or other legal basis the law of your country requires.
+
+4. YOU ARE RESPONSIBLE FOR YOUR USE. You are responsible for the content you
+   dictate, for your API keys (kept in a plain text file on your PC), for the
+   costs charged by the services you use, and for checking every transcription
+   and AI-corrected text before relying on it. AI output can be wrong.
+
+5. NO WARRANTY. The program is provided "as is" and free of charge, without
+   any warranty, as set out in the license (LICENSE). To the extent the law
+   allows, the Author is not liable for damages arising from its use or from
+   the third-party services it connects to. This does not limit rights that
+   cannot be limited by law.
+
+The program does not collect telemetry and the Author receives none of your
+data. Details: legal/PRIVACY.en.md. This notice is not legal advice.
