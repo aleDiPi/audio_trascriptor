@@ -42,10 +42,12 @@ mod hotkey;
 #[path = "hotkey_linux.rs"]
 mod hotkey;
 #[cfg(any(desktop, test))]
-#[cfg_attr(not(windows), allow(dead_code))] // il bollino a schermo (che li usa) c'e' solo su Windows
 mod levels;
 #[cfg(desktop)]
 mod localstt;
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod overlay_render;
 #[cfg(windows)]
 #[path = "overlay_windows.rs"]
 mod overlay;

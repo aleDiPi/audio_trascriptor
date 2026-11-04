@@ -49,7 +49,7 @@ winreg = "0.56.0"
 # tray-icon su Linux (GTK + AppIndicator) richiede un ciclo GTK; x11rb parla con il server X11 (scorciatoia globale,
 # app in primo piano, tasti simulati); arboard gestisce gli appunti X11.
 gtk = "0.18"
-x11rb = { version = "0.13", features = ["xinput", "xtest"] }
+x11rb = { version = "0.13", features = ["xinput", "xtest", "shape"] }
 arboard = { version = "3", default-features = false }
 
 # Pacchetto .deb (cargo deb --no-build, dopo cargo build --release): vedi .github/workflows/build.yml

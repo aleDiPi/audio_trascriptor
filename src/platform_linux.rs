@@ -189,9 +189,13 @@ fn foreground_app_inner() -> Option<(String, String)> {
     Some((app_name(exe_link.as_deref(), class.as_deref()), title))
 }
 
-/// Su Linux l'icona dell'app in primo piano non viene letta (non c'e' il bollino a schermo).
-pub fn foreground_icon() -> Option<isize> {
-    None
+/// Icona (`_NET_WM_ICON`) dell'app in primo piano, per il bollino a schermo. None se la finestra non la espone.
+pub fn foreground_icon() -> Option<crate::overlay_render::Icon> {
+    let (conn, root) = connect().ok()?;
+    let win = prop32(&conn, root, "_NET_ACTIVE_WINDOW", AtomEnum::ANY).filter(|w| *w != 0)?;
+    let reply = conn.get_property(false, win, atom(&conn, "_NET_WM_ICON")?, AtomEnum::CARDINAL, 0, 1 << 20).ok()?.reply().ok()?;
+    let data: Vec<u32> = reply.value32()?.collect();
+    crate::overlay_render::pick_icon(&data, crate::overlay_render::ICON_PX)
 }
 
 // ---------- tasti
