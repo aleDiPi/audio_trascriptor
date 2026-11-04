@@ -190,6 +190,10 @@ mod app {
                         if cfg.is_toggle() {
                             finish(&mut rec, &cfg, &notify);
                         }
+                    } else if !providers::stt_available(&providers::parse_order(&cfg.providers), config::provider_ready) {
+                        // nessuna chiave e nessun modello locale: parlare sarebbe inutile, si avvisa e si apre la sezione AI
+                        config::log("no AI service ready (no API key and no local model): not recording");
+                        no_ai_notice();
                     } else {
                         let (exe, title) = platform::foreground_app();
                         config::debug(|| format!("foreground app: '{exe}', title '{title}'"));
@@ -218,6 +222,30 @@ mod app {
                 }
             }
         }
+    }
+
+    /// Finestra "nessun servizio AI pronto" con il pulsante che apre Impostazioni > AI. Al massimo una ogni 30 secondi.
+    fn no_ai_notice() {
+        static LAST: Mutex<Option<u64>> = Mutex::new(None);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        {
+            let mut last = LAST.lock().unwrap();
+            if !providers::notice_due(*last, now, 30) {
+                return;
+            }
+            *last = Some(now);
+        }
+        std::thread::spawn(|| {
+            let (title, mut text) = (crate::i18n::t("popup.no_ai_title"), crate::i18n::t("popup.no_ai_text"));
+            if cfg!(windows) {
+                // i pulsanti di Windows sono sempre OK/Annulla: il testo dice cosa fa OK
+                text = format!("{text}\n\n{}", crate::i18n::t("popup.ok_hint"));
+            }
+            let (open, close) = (crate::i18n::t("popup.open_settings"), crate::i18n::t("popup.close"));
+            if platform::ask(&title, &text, &open, &close) {
+                gui::show_page(gui::PAGE_AI);
+            }
+        });
     }
 
     fn finish(

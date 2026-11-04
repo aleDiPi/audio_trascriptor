@@ -37,6 +37,18 @@ struct Ui {
     _timer: Timer,
 }
 
+/// Pagina da aprire alla prossima apertura della finestra (-1 = lascia com'e').
+static NEXT_PAGE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-1);
+
+/// Pagina "AI" delle Impostazioni (la seconda voce del menu laterale).
+pub const PAGE_AI: i32 = 1;
+
+/// Apre la finestra sulla pagina indicata (o la porta in primo piano se e' gia' aperta).
+pub fn show_page(page: i32) {
+    NEXT_PAGE.store(page, Ordering::Relaxed);
+    show();
+}
+
 /// Apre la finestra (o la porta in primo piano se e' gia' aperta).
 pub fn show() {
     static START: Once = Once::new();
@@ -67,8 +79,12 @@ fn gui_thread() {
 }
 
 fn open_window() {
+    let page = NEXT_PAGE.swap(-1, Ordering::Relaxed);
     let existing = WIN.with(|w| {
         if let Some(ui) = w.borrow().as_ref() {
+            if page >= 0 {
+                ui.win.set_page(page);
+            }
             let _ = ui.win.show();
             ui.win.window().set_minimized(false);
             true
@@ -80,7 +96,12 @@ fn open_window() {
         return;
     }
     match create_window() {
-        Ok(ui) => WIN.with(|w| *w.borrow_mut() = Some(ui)),
+        Ok(ui) => {
+            if page >= 0 {
+                ui.win.set_page(page);
+            }
+            WIN.with(|w| *w.borrow_mut() = Some(ui))
+        }
         Err(e) => config::log(&format!("cannot open the settings: {e}")),
     }
 }
