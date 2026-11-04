@@ -4,7 +4,7 @@
 
 use crate::i18n::{self, t, tf};
 use crate::providers::{self, Provider};
-use crate::{anthropic, config, localstt, oai, platform, release, sounds, updater, usage};
+use crate::{anthropic, backup, config, filepick, localstt, oai, platform, release, sounds, updater, usage};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
 use std::sync::{Condvar, Mutex, Once};
@@ -473,9 +473,191 @@ fn save_layout() {
     config::set_providers(&enabled_order(&LAYOUT.lock().unwrap()));
 }
 
+
+// ---------- esporta / importa impostazioni
+
+/// Default file for an export: in the user's home folder.
+fn default_backup_path(home: Option<&str>) -> std::path::PathBuf {
+    std::path::Path::new(home.unwrap_or(".")).join(backup::DEFAULT_NAME)
+}
+
+fn home_dir() -> Option<String> {
+    std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok()
+}
+
+/// Text shown to the user for a failed export or import.
+fn backup_error_text(e: &backup::BackupError) -> String {
+    use backup::BackupError::*;
+    match e {
+        NeedsPassword => t("gui.backup_err_needs_password"),
+        WrongPassword => t("gui.backup_err_wrong_password"),
+        Invalid => t("gui.backup_err_invalid"),
+        Unsupported => t("gui.backup_err_unsupported"),
+        Exists => t("gui.backup_err_exists"),
+        Io(m) => tf("gui.backup_err_io", &[("error", m)]),
+    }
+}
+
+/// `None` password when the field is empty. Returns an error text if the two fields differ.
+fn export_password(pw: &str, again: &str) -> Result<Option<String>, String> {
+    if pw != again {
+        return Err(t("gui.backup_pw_mismatch"));
+    }
+    Ok((!pw.is_empty()).then(|| pw.to_string()))
+}
+
+/// Shows the result of an operation in the dialog and in the card.
+fn backup_result(w: &SettingsWindow, ok: bool, text: String) {
+    w.set_backup_ok(ok);
+    w.set_backup_status(text.into());
+    w.set_backup_busy(false);
+}
+
+/// Reads the file to know whether it asks for a password.
+fn inspect_backup(w: &SettingsWindow, path: &str) {
+    w.set_import_pw("".into());
+    w.set_import_needs_password(false);
+    w.set_import_info("".into());
+    w.set_backup_status("".into());
+    if path.trim().is_empty() {
+        return;
+    }
+    match backup::read_file(std::path::Path::new(path.trim())) {
+        Ok(text) => match backup::is_encrypted(&text) {
+            Some(true) => {
+                w.set_import_needs_password(true);
+                w.set_import_info(t("gui.backup_info_enc").into());
+            }
+            Some(false) => w.set_import_info(t("gui.backup_info_plain").into()),
+            None => backup_result(w, false, backup_error_text(&backup::BackupError::Invalid)),
+        },
+        Err(e) => backup_result(w, false, backup_error_text(&e)),
+    }
+}
+
+fn wire_backup(win: &SettingsWindow) {
+    use slint::winit_030::{winit, EventResult, WinitWindowAccessor};
+    let weak = win.as_weak();
+
+    // a file dropped on the window: opens the import dialog on it
+    win.window().on_winit_window_event({
+        let weak = weak.clone();
+        move |_, ev| {
+            if let winit::event::WindowEvent::DroppedFile(p) = ev {
+                if let Some(w) = weak.upgrade() {
+                    w.set_backup_path(p.display().to_string().into());
+                    w.set_dialog(2);
+                    inspect_backup(&w, &p.display().to_string());
+                }
+            }
+            EventResult::Propagate
+        }
+    });
+
+    win.on_backup_browse({
+        let weak = weak.clone();
+        move |save| {
+            let Some(w) = weak.upgrade() else { return };
+            let current = w.get_backup_path().to_string();
+            let suggested = if current.trim().is_empty() { default_backup_path(home_dir().as_deref()) } else { current.into() };
+            if !filepick::available() {
+                backup_result(&w, false, t("gui.backup_no_picker"));
+                return;
+            }
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let picked = filepick::pick(save, &suggested);
+                let _ = weak.upgrade_in_event_loop(move |w| {
+                    if let Some(p) = picked {
+                        let p = p.display().to_string();
+                        w.set_backup_path(p.clone().into());
+                        w.set_backup_status("".into());
+                        if !save {
+                            inspect_backup(&w, &p);
+                        }
+                    }
+                });
+            });
+        }
+    });
+
+    win.on_inspect_import({
+        let weak = weak.clone();
+        move |path| {
+            if let Some(w) = weak.upgrade() {
+                inspect_backup(&w, &path);
+            }
+        }
+    });
+
+    win.on_export_settings({
+        let weak = weak.clone();
+        move |path, pw, again, prefs, prompts, keys| {
+            let Some(w) = weak.upgrade() else { return };
+            let path = path.trim().to_string();
+            if path.is_empty() {
+                return backup_result(&w, false, t("gui.backup_err_path"));
+            }
+            let password = match export_password(&pw, &again) {
+                Ok(p) => p,
+                Err(m) => return backup_result(&w, false, m),
+            };
+            w.set_backup_busy(true);
+            w.set_backup_status("".into());
+            let sel = backup::Selection { prefs, prompts, keys };
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let r = backup::export_to(config::dir(), std::path::Path::new(&path), password.as_deref(), sel);
+                let _ = weak.upgrade_in_event_loop(move |w| match r {
+                    Ok(()) => {
+                        let how = if password.is_some() { t("gui.backup_how_encrypted") } else { t("gui.backup_how_plain") };
+                        backup_result(&w, true, tf("gui.backup_exported", &[("path", &path), ("how", &how)]));
+                        w.set_dialog(0);
+                    }
+                    Err(e) => backup_result(&w, false, backup_error_text(&e)),
+                });
+            });
+        }
+    });
+
+    win.on_import_settings({
+        let weak = weak.clone();
+        move |path, pw| {
+            let Some(w) = weak.upgrade() else { return };
+            let path = path.trim().to_string();
+            if path.is_empty() {
+                return backup_result(&w, false, t("gui.backup_err_path"));
+            }
+            w.set_backup_busy(true);
+            w.set_backup_status("".into());
+            let pw = pw.to_string();
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let r = backup::read_file(std::path::Path::new(&path))
+                    .and_then(|text| backup::open(&text, Some(&pw)))
+                    .and_then(|p| backup::apply(config::dir(), &p).map(|_| p));
+                let _ = weak.upgrade_in_event_loop(move |w| match r {
+                    Ok(p) => {
+                        let cfg = config::load();
+                        i18n::init(&cfg.ui_language, Some(&config::dir().join("lang")));
+                        relocalize(&w);
+                        w.set_dialog(0);
+                        backup_result(&w, true, tf("gui.backup_imported", &[("keys", &p.keys.len().to_string())]));
+                    }
+                    Err(e) => {
+                        w.set_import_needs_password(e == backup::BackupError::NeedsPassword || e == backup::BackupError::WrongPassword || w.get_import_needs_password());
+                        backup_result(&w, false, backup_error_text(&e));
+                    }
+                });
+            });
+        }
+    });
+}
+
 // ---------- collegamento dei pulsanti
 
 fn wire(win: &SettingsWindow) {
+    wire_backup(win);
     let weak = win.as_weak();
 
     win.on_open_keys(|id| {
@@ -957,6 +1139,32 @@ fn verify_and_save_token(typed: String) -> (String, Option<String>, bool) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn default_backup_file_is_in_the_home_folder() {
+        assert_eq!(default_backup_path(Some("/home/a")), std::path::Path::new("/home/a").join(backup::DEFAULT_NAME));
+    }
+
+    #[test]
+    fn export_password_must_be_repeated_identically() {
+        assert_eq!(export_password("", ""), Ok(None));
+        assert_eq!(export_password("abc", "abc"), Ok(Some("abc".to_string())));
+        assert!(export_password("abc", "abd").is_err());
+        assert!(export_password("abc", "").is_err());
+    }
+
+    #[test]
+    fn every_backup_error_has_a_distinct_message() {
+        use backup::BackupError::*;
+        let all = [NeedsPassword, WrongPassword, Invalid, Unsupported, Exists, Io("x".into())];
+        let texts: Vec<String> = all.iter().map(backup_error_text).collect();
+        for (i, a) in texts.iter().enumerate() {
+            assert!(!a.is_empty());
+            for b in &texts[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+    }
+
     use super::*;
 
     fn names(l: &[(Provider, bool)]) -> Vec<(&'static str, bool)> {

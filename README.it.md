@@ -10,6 +10,8 @@ Dettatura vocale per **Windows** e **Linux** (Linux Mint, Ubuntu), scritta in Ru
 
 **Lingue:** l'interfaccia e' disponibile in italiano e in inglese. La lingua segue quella del sistema; si cambia nell'installer (Windows) e in qualsiasi momento da *Impostazioni > Lingua* (e' anche il modo di cambiarla su Linux, dove non c'e' un installer). Chiunque puo' aggiungere una lingua con un solo file di testo: vedi [CONTRIBUTING.md](CONTRIBUTING.md) e la cartella `lang/`.
 
+**Esporta / importa impostazioni:** *Impostazioni > Esporta / importa impostazioni*. *Esporta* fa scegliere cosa salvare (preferenze, prompt, chiavi dei servizi AI) e una password facoltativa; con la password il file e' cifrato (Argon2id + XChaCha20-Poly1305), senza e' testo in chiaro e contiene le chiavi: tienilo al sicuro. *Importa* prende il file (Sfoglia, oppure trascinalo sulla finestra) e chiede la password se e' cifrato; il `config.toml` precedente resta come `config.toml.bak`. Il token GitHub degli aggiornamenti non viene mai esportato. Su Linux Sfoglia richiede `zenity` o `kdialog`; altrimenti scrivi il percorso.
+
 Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quando e' inattivo. Icona blu = pronto, rossa = registra, arancione = elabora, grigia = errore (passa il mouse per il dettaglio).
 
 ## Struttura della cartella
