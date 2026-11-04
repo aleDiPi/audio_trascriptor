@@ -1,8 +1,10 @@
 # Trascrittore audio
 
-Dettatura vocale per Windows, scritta in Rust (un solo `.exe`, nessun runtime da installare).
+Dettatura vocale per **Windows** e **Linux** (Linux Mint, Ubuntu), scritta in Rust (nessun runtime da installare).
 
 **Come funziona:** tieni premuta la scorciatoia (default `Ctrl+Win`), parla, rilascia. L'audio del microfono predefinito di Windows viene trascritto da Groq Whisper, rifinito da un LLM Groq con un prompt che dipende dall'app in primo piano (Outlook, Slack, VS Code, Word...) e il risultato viene incollato dove hai il cursore.
+
+(Su Linux: microfono predefinito del sistema, vedi la sezione *Linux* piu' sotto.)
 
 Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quando e' inattivo. Icona blu = pronto, rossa = registra, arancione = elabora, grigia = errore (passa il mouse per il dettaglio).
 
@@ -10,7 +12,7 @@ Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quan
 
 | Tipo | File | Su GitHub |
 |---|---|---|
-| Programma | `src/`, `Cargo.toml`, `config/config.example.toml`, `.github/workflows/` | si |
+| Programma | `src/`, `ui/`, `Cargo.toml`, `config/config.example.toml`, `installer/` (Windows e Linux), `.github/workflows/` | si |
 | Sicurezza | `.env.example`, `.gitignore`, `SECURITY.md` (e in locale `.env`, `config.toml`) | solo i modelli; `.env` e `config.toml` mai |
 | Secondari | `target/`, `*.log`, `recordings/`, `local/`, `notes/`, `tmp/` | no (ignorati) |
 
@@ -45,7 +47,7 @@ Per generarlo a mano: `cargo build --release`, poi `ISCC.exe /DAppVersion=2026.1
 3. Apri `.env` e scrivi la tua chiave: `GROQ_API_KEY=gsk_...` ([crea una chiave gratuita](https://console.groq.com/keys)).
 4. `cargo run --release` (oppure `cargo build --release` e avvia `target\release\trascrittore.exe`).
 
-In alternativa scarica l'exe gia' compilato dagli artifact della GitHub Action "Build Windows".
+In alternativa scarica l'exe gia' compilato dagli artifact della GitHub Action "Build".
 
 Il programma cerca `config.toml` nella cartella corrente, accanto all'exe, in `%ProgramData%\Trascrittore\` e infine in `%APPDATA%\Trascrittore\`; se non lo trova usa quest'ultima (creandolo con i valori predefiniti). Menu tray (tasto destro): **Avvia con Windows**, **Apri cartella configurazione**, **Ricarica configurazione**, **Esci**.
 
@@ -62,6 +64,39 @@ Nei primi test attiva la **modalita' debug**: dal menu dell'icona nella tray (*M
 - i controlli di aggiornamento.
 
 Senza debug il log contiene solo avvio, errori e avvisi. **Non** scrive mai chiavi API o token. Il testo dettato compare nel log solo se aggiungi anche `debug_log_text = true` (e' privato: attivalo solo per cercare un problema).
+
+## Linux (Linux Mint 22, Ubuntu 24.04)
+
+Il pacchetto `trascrittore.deb` e' nella stessa release di GitHub dell'installer Windows (stesso numero di versione). Il pacchetto e' compilato su Ubuntu 24.04, quindi serve **Linux Mint 22** o piu' recente (le versioni 21 e precedenti hanno una libreria di sistema troppo vecchia).
+
+**Installazione:** scarica `trascrittore.deb` dalla pagina Release (il repository e' privato: serve essere collegati a GitHub) e installalo con doppio clic (Gestore software) oppure:
+
+```bash
+sudo apt install ./trascrittore.deb
+```
+
+apt aggiunge da solo le librerie che servono. Si disinstalla con `sudo apt remove trascrittore` (la cartella di configurazione dell'utente resta: `rm -r ~/.config/trascrittore` per cancellare anche quella).
+
+**Cosa cambia rispetto a Windows**
+
+- Serve una sessione grafica **X11** (e' quella predefinita di Linux Mint Cinnamon). Con Wayland la scorciatoia globale non funziona, e il programma lo scrive nel log.
+- Scorciatoia: `Ctrl+Win` (tasto Super) come su Windows. Su Linux i tasti non vengono "mangiati": conviene una combinazione di soli modificatori oppure un tasto che non scrive nulla (`f9`, ...), altrimenti il tasto arriva anche all'applicazione. Se `Ctrl+Super` interferisce con un'altra scorciatoia di Cinnamon, cambia `hotkey` in `config.toml` e scegli *Ricarica configurazione* dal menu dell'icona.
+- Il programma parte all'accesso, ridotto nell'area di notifica (voce in `/etc/xdg/autostart`). Si spegne dal menu dell'icona (*Avvia all'accesso*) o dalle Impostazioni; la scelta dell'utente sta in `~/.config/autostart/trascrittore.desktop`. Se lo avvii dal menu delle applicazioni mentre e' gia' in esecuzione, si apre la finestra delle Impostazioni.
+- Configurazione, chiavi (`.env`, leggibile solo da te) e log stanno in `~/.config/trascrittore/`.
+- Le regole per applicazione usano il nome del programma in primo piano (`thunderbird`, `code`, `firefox`...); il suffisso `.exe` e le maiuscole non contano, quindi `chrome.exe` vale anche `chrome`. Per i terminali (gnome-terminal, xfce4-terminal, konsole...) incolla con `Ctrl+Maiusc+V` (`paste = "ctrl+shift+v"`).
+- Su Linux non c'e' il bollino a schermo durante la registrazione: restano i suoni e il colore dell'icona.
+- Gli appunti sono gestiti da X11; i tasti vengono simulati con l'estensione XTest. Per i suoni serve `paplay`, `pw-play` o `aplay` (presenti in Mint); per la notifica di aggiornamento `notify-send` (`libnotify-bin`).
+- **Aggiornamenti:** con il token GitHub (Impostazioni > Info, come su Windows) il programma controlla le nuove versioni ogni 6 ore e mostra una notifica; **Impostazioni > Info > Aggiorna ora** scarica il `.deb` della release, ne verifica lo SHA-256 e lo installa con `apt` (compare la richiesta della password, `pkexec`), poi si riavvia. Senza token si aggiorna a mano reinstallando il nuovo `.deb`.
+
+**Compilare dal sorgente (Linux):**
+
+```bash
+sudo apt install build-essential cmake clang pkg-config libasound2-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev libfontconfig1-dev libxkbcommon-dev
+cargo build --release          # target/release/trascrittore
+cargo install cargo-deb --locked && cargo deb --no-build   # target/debian/*.deb
+```
+
+I test (`cargo test`) girano senza server grafico; i due test che usano un vero server X11 (`paste_smoke`, `foreground_smoke`) sono `#[ignore]` e si lanciano a mano, per esempio con Xvfb.
 
 ## Versioni
 

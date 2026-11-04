@@ -1,5 +1,5 @@
 //! Suoni brevi all'inizio e alla fine della registrazione. Sono toni sintetizzati in memoria (nessun file da
-//! distribuire) e riprodotti in modo asincrono da Windows. Il suono d'inizio viene scartato dalla registrazione
+//! distribuire) e riprodotti in modo asincrono (Windows: PlaySound; Linux: paplay/pw-play/aplay). Il suono d'inizio viene scartato dalla registrazione
 //! (`audio::start` salta i primi millisecondi) e quello di fine parte quando il microfono e' gia' chiuso.
 
 pub const RATE: u32 = 22_050;
@@ -128,8 +128,80 @@ mod player {
     }
 }
 
-#[cfg(windows)]
+#[cfg(target_os = "linux")]
+mod player {
+    use super::*;
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Stdio};
+
+    /// Programmi per suonare un file WAV, nell'ordine di preferenza, con i loro argomenti.
+    const PLAYERS: [(&str, &[&str]); 3] = [("paplay", &[]), ("pw-play", &[]), ("aplay", &["-q"])];
+
+    /// Primo programma dell'elenco presente in una variabile PATH.
+    pub fn find_player(path_var: &str) -> Option<(PathBuf, &'static [&'static str])> {
+        PLAYERS.iter().find_map(|(name, args)| {
+            std::env::split_paths(path_var).map(|d| d.join(name)).find(|p| p.is_file()).map(|p| (p, *args))
+        })
+    }
+
+    fn wav_path(kind: Kind) -> PathBuf {
+        let dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        dir.join(format!("trascrittore-{}.wav", if kind == Kind::Start { "inizio" } else { "fine" }))
+    }
+
+    fn spawn(player: &Path, args: &[&str], file: &Path) {
+        if let Ok(mut child) = Command::new(player).args(args).arg(file).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+    }
+
+    /// Suona (senza aspettare) con stile e volume dati, a prescindere dall'impostazione "suoni attivi".
+    pub fn play_with(kind: Kind, style: Style, volume: u8) {
+        if volume == 0 {
+            return;
+        }
+        let Some((player, args)) = std::env::var("PATH").ok().and_then(|p| find_player(&p)) else { return };
+        let file = wav_path(kind);
+        if std::fs::write(&file, wav(kind, style, volume)).is_ok() {
+            spawn(&player, args, &file);
+        }
+    }
+
+    /// Suona se i suoni sono attivi nelle impostazioni. Restituisce la durata in ms (0 se non suona).
+    pub fn play(kind: Kind) -> u32 {
+        if !crate::config::sounds_enabled() || crate::config::sound_volume() == 0 {
+            return 0;
+        }
+        let style = Style::parse(&crate::config::sound_style());
+        play_with(kind, style, crate::config::sound_volume());
+        duration_ms(kind, style)
+    }
+}
+
+#[cfg(desktop)]
 pub use player::{play, play_with};
+
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::player::find_player;
+
+    #[test]
+    fn player_is_looked_up_in_path() {
+        let dir = std::env::temp_dir().join(format!("trascrittore-test-{}-player", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(find_player(dir.to_str().unwrap()).is_none());
+        std::fs::write(dir.join("aplay"), "").unwrap();
+        let (p, args) = find_player(dir.to_str().unwrap()).unwrap();
+        assert!(p.ends_with("aplay") && args == ["-q"]);
+        std::fs::write(dir.join("paplay"), "").unwrap(); // paplay ha la precedenza
+        assert!(find_player(dir.to_str().unwrap()).unwrap().0.ends_with("paplay"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
 
 #[cfg(test)]
 mod tests {

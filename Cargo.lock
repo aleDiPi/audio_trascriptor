@@ -5341,8 +5341,10 @@ dependencies = [
 name = "trascrittore"
 version = "0.1.0"
 dependencies = [
+ "arboard",
  "cpal",
  "embed-resource",
+ "gtk",
  "hound",
  "reqwest",
  "serde",
@@ -5355,6 +5357,7 @@ dependencies = [
  "whisper-rs",
  "windows-sys 0.61.2",
  "winreg",
+ "x11rb",
 ]
 
 [[package]]

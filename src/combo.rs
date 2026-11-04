@@ -21,6 +21,7 @@ pub fn parse(s: &str) -> Result<Combo, String> {
             "tab" => c.key = Some(0x09),
             "enter" | "invio" => c.key = Some(0x0D),
             "esc" => c.key = Some(0x1B),
+            "insert" | "ins" => c.key = Some(0x2D),
             p if p.len() == 1 && p.as_bytes()[0].is_ascii_alphanumeric() => {
                 c.key = Some(p.as_bytes()[0].to_ascii_uppercase() as u32)
             }
@@ -60,6 +61,13 @@ mod tests {
         assert_eq!(parse("alt+7").unwrap().key, Some(b'7' as u32));
         assert_eq!(parse("f9").unwrap().key, Some(0x78));
         assert_eq!(parse("f24").unwrap().key, Some(0x87));
+    }
+
+    #[test]
+    fn insert_key() {
+        let c = parse("shift+insert").unwrap();
+        assert!(c.shift);
+        assert_eq!(c.key, Some(0x2D));
     }
 
     #[test]

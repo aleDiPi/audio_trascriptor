@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Trascrittore audio
+GenericName=Dettatura vocale
+Comment=Tieni premuta la scorciatoia, parla, rilascia: il testo viene trascritto e incollato dove hai il cursore
+Exec=trascrittore
+Icon=trascrittore
+Terminal=false
+Categories=Utility;Audio;
+Keywords=dettatura;trascrizione;voce;microfono;
+StartupNotify=false

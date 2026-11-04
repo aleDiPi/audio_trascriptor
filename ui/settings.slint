@@ -329,6 +329,8 @@ export component SettingsWindow inherits Window {
     in-out property <bool> debug-text;
     in-out property <bool> sounds;
     in-out property <bool> autostart;
+    // true su Linux: nessun bollino a schermo, testi senza riferimenti a Windows
+    in property <bool> linux;
     in property <int> sound-style-index;
     in-out property <float> sound-volume;
     in property <string> upd-result;
@@ -515,9 +517,9 @@ export component SettingsWindow inherits Window {
                     spacing: 10px;
                     Title { text: "Impostazioni"; }
                     Card { title: "Avvio";
-                        CheckBox { text: "Avvia con Windows (parte ridotto nella tray)"; checked: root.autostart; toggled => { root.toggle-autostart(self.checked); } }
+                        CheckBox { text: root.linux ? "Avvia all'accesso (parte ridotto nella tray)" : "Avvia con Windows (parte ridotto nella tray)"; checked: root.autostart; toggled => { root.toggle-autostart(self.checked); } }
                     }
-                    Card { title: "Durante la dettatura";
+                    if !root.linux: Card { title: "Durante la dettatura";
                         CheckBox { text: "Mostra l'icona con l'alone sonoro in basso a destra"; checked: root.overlay; toggled => { root.toggle-overlay(self.checked); } }
                     }
                     Card { title: "Suoni";

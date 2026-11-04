@@ -2,7 +2,7 @@
 name = "trascrittore"
 version = "0.1.0"
 edition = "2021"
-description = "Dettatura vocale per Windows: microfono -> Groq Whisper -> Groq LLM -> incolla nel cursore"
+description = "Dettatura vocale per Windows e Linux: microfono -> Groq Whisper -> Groq LLM -> incolla nel cursore"
 license = "MIT"
 
 [profile.release]
@@ -26,13 +26,40 @@ sha2 = "0.11.1"
 toml = "1.1.8"
 tray-icon = "0.26.1"
 
+# whisper.cpp (trascrizione locale) e Slint (impostazioni) sono uguali su Windows e Linux
+whisper-rs = "0.16.0"
+slint = { version = "1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "software-renderer-systemfonts", "compat-1-2"] }
+
 [build-dependencies]
 embed-resource = "3"
 slint-build = "1.18.1"
 
 [target."cfg(windows)".dependencies]
-slint = { version = "1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "software-renderer-systemfonts", "compat-1-2"] }
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_HiDpi", "Win32_Media_Audio"] }
 winreg = "0.56.0"
-whisper-rs = "0.16.0"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# tray-icon su Linux (GTK + AppIndicator) richiede un ciclo GTK; x11rb parla con il server X11 (scorciatoia globale,
+# app in primo piano, tasti simulati); arboard gestisce gli appunti X11.
+gtk = "0.18"
+x11rb = { version = "0.13", features = ["xinput", "xtest"] }
+arboard = { version = "3", default-features = false }
+
+# Pacchetto .deb (cargo deb --no-build, dopo cargo build --release): vedi .github/workflows/build.yml
+[package.metadata.deb]
+name = "trascrittore"
+maintainer = "aleDiPi <noreply@users.noreply.github.com>"
+section = "sound"
+priority = "optional"
+extended-description = "Tieni premuta una scorciatoia, parla, rilascia: il testo viene trascritto, corretto da un servizio AI con un prompt adatto all'app in primo piano e incollato dove hai il cursore. Sta nell'area di notifica e usa poche risorse."
+# librerie caricate a runtime (dlopen) che dpkg-shlibdeps non vede
+depends = "$auto, libayatana-appindicator3-1 | libappindicator3-1, libxdo3, libxkbcommon-x11-0, libxcursor1, libxrandr2, libxi6, libfontconfig1, pulseaudio-utils | pipewire-bin | alsa-utils, policykit-1 | polkitd"
+recommends = "libnotify-bin, libasound2-plugins"
+assets = [
+    ["target/release/trascrittore", "usr/bin/", "755"],
+    ["installer/linux/trascrittore.desktop", "usr/share/applications/", "644"],
+    ["installer/linux/trascrittore-autostart.desktop", "etc/xdg/autostart/trascrittore.desktop", "644"],
+    ["assets/icon-256.png", "usr/share/icons/hicolor/256x256/apps/trascrittore.png", "644"],
+    ["config/config.example.toml", "usr/share/doc/trascrittore/config.example.toml", "644"],
+    ["README.md", "usr/share/doc/trascrittore/README.md", "644"],
+]
