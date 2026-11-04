@@ -1,7 +1,7 @@
 //! Testi legali incorporati nel programma (stessi file della cartella `legal/`, mostrati anche
 //! dall'installer): l'avviso sui servizi AI di terzi si legge anche dalla finestra Impostazioni.
 
-#![allow(dead_code)] // le funzioni le collega alla finestra Impostazioni la traduzione dell'interfaccia
+
 
 const DISCLAIMER_EN: &str = include_str!("../legal/DISCLAIMER.en.txt");
 const DISCLAIMER_IT: &str = include_str!("../legal/DISCLAIMER.it.txt");

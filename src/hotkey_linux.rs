@@ -85,11 +85,11 @@ pub fn set_combo(c: Combo) {
 pub fn install(tx: Sender<Event>) {
     let _ = TX.set(tx);
     if std::env::var("XDG_SESSION_TYPE").map_or(false, |t| t == "wayland") {
-        config::log("sessione Wayland: la scorciatoia globale funziona solo in una sessione X11 (Linux Mint Cinnamon la usa di default)");
+        config::log("Wayland session: the global hotkey only works in an X11 session (Linux Mint Cinnamon uses it by default)");
     }
     let _ = std::thread::Builder::new().name("hotkey".into()).spawn(|| {
         if let Err(e) = listen() {
-            config::log(&format!("scorciatoia globale non attiva: {e}"));
+            config::log(&format!("global hotkey not active: {e}"));
         }
     });
 }
@@ -111,7 +111,7 @@ fn codes_for(combo: &Combo, conn: &x11rb::rust_connection::RustConnection) -> Co
 
 fn listen() -> Result<(), String> {
     let (conn, root) = platform::connect()?;
-    conn.xinput_xi_query_version(2, 0).map_err(|e| e.to_string())?.reply().map_err(|e| format!("XInput2 non disponibile: {e}"))?;
+    conn.xinput_xi_query_version(2, 0).map_err(|e| e.to_string())?.reply().map_err(|e| format!("XInput2 not available: {e}"))?;
     // 1 = XIAllMasterDevices
     let mask = EventMask { deviceid: 1, mask: vec![XIEventMask::RAW_KEY_PRESS | XIEventMask::RAW_KEY_RELEASE] };
     conn.xinput_xi_select_events(root, &[mask]).map_err(|e| e.to_string())?;
@@ -119,7 +119,7 @@ fn listen() -> Result<(), String> {
 
     let mut tracker = Tracker::default();
     loop {
-        let (keycode, down) = match conn.wait_for_event().map_err(|e| format!("connessione a X11 persa: {e}"))? {
+        let (keycode, down) = match conn.wait_for_event().map_err(|e| format!("X11 connection lost: {e}"))? {
             XEvent::XinputRawKeyPress(e) => (e.detail, true),
             XEvent::XinputRawKeyRelease(e) => (e.detail, false),
             _ => continue,

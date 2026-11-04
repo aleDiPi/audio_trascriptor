@@ -2,6 +2,7 @@
 //! Il thread grafico parte al primo clic sull'icona nella tray; la finestra viene creata a ogni apertura e
 //! distrutta alla chiusura, quindi da chiusa resta solo un thread in attesa (nessuna CPU).
 
+use crate::i18n::{self, t, tf};
 use crate::providers::{self, Provider};
 use crate::{anthropic, config, localstt, oai, platform, release, sounds, updater, usage};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
@@ -11,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 slint::include_modules!();
+include!(concat!(env!("OUT_DIR"), "/tr_apply.rs"));
 
 const GITHUB_TOKEN_URL: &str = "https://github.com/settings/personal-access-tokens/new";
 const REFRESH: Duration = Duration::from_secs(3);
@@ -44,13 +46,13 @@ pub fn show() {
         let _ = cv.wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(5), |ready| !*ready);
     });
     if slint::invoke_from_event_loop(open_window).is_err() {
-        config::log("interfaccia grafica non disponibile (thread terminato)");
+        config::log("GUI not available (thread ended)");
     }
 }
 
 fn gui_thread() {
     if let Err(e) = slint::BackendSelector::new().backend_name("winit".into()).renderer_name("software".into()).select() {
-        config::log(&format!("impossibile avviare l'interfaccia grafica: {e}"));
+        config::log(&format!("cannot start the GUI: {e}"));
         return;
     }
     Timer::single_shot(Duration::ZERO, || {
@@ -60,7 +62,7 @@ fn gui_thread() {
     });
     // la finestra si crea e si chiude piu' volte: il ciclo non deve terminare con l'ultima finestra
     if let Err(e) = slint::run_event_loop_until_quit() {
-        config::log(&format!("interfaccia grafica terminata: {e}"));
+        config::log(&format!("GUI ended: {e}"));
     }
 }
 
@@ -79,13 +81,16 @@ fn open_window() {
     }
     match create_window() {
         Ok(ui) => WIN.with(|w| *w.borrow_mut() = Some(ui)),
-        Err(e) => config::log(&format!("impossibile aprire le impostazioni: {e}")),
+        Err(e) => config::log(&format!("cannot open the settings: {e}")),
     }
 }
 
 fn create_window() -> Result<Ui, slint::PlatformError> {
     let win = SettingsWindow::new()?;
     let cfg = config::load();
+    apply_ui_texts(&win, &t);
+    set_language_list(&win, &cfg.ui_language);
+    set_legal_texts(&win);
 
     *LAYOUT.lock().unwrap() = initial_layout(&cfg.providers);
     *TILE_UI.lock().unwrap() = providers::ALL.iter().map(|p| (*p, String::new(), false, 0)).collect();
@@ -125,6 +130,42 @@ fn create_window() -> Result<Ui, slint::PlatformError> {
     check_update_in_background(win.as_weak());
     win.show()?;
     Ok(Ui { win, _timer: timer })
+}
+
+// ---------- language
+
+/// Entries of the language list: automatic first, then every available language by its own name.
+fn language_choices() -> Vec<(String, String)> {
+    i18n::choices(&i18n::languages(), &t("ui.language_auto"))
+}
+
+fn set_language_list(win: &SettingsWindow, setting: &str) {
+    let choices = language_choices();
+    win.set_lang_index(i18n::choice_index(setting, &choices) as i32);
+    win.set_lang_names(ModelRc::new(VecModel::from(choices.into_iter().map(|(_, n)| SharedString::from(n)).collect::<Vec<_>>())));
+}
+
+/// Legal notice and license in the language in use (English if there is no translation).
+fn set_legal_texts(win: &SettingsWindow) {
+    let lang = i18n::current();
+    win.set_legal_disclaimer(norm(crate::legal::disclaimer(&lang)).into());
+    win.set_legal_license(norm(crate::legal::license(&lang)).into());
+}
+
+/// After a language change: rewrites every text of the open window.
+fn relocalize(win: &SettingsWindow) {
+    let cfg = config::load();
+    apply_ui_texts(win, &t);
+    set_language_list(win, &cfg.ui_language);
+    set_legal_texts(win);
+    let cases = cfg.prompt_cases();
+    win.set_prompt_titles(ModelRc::new(VecModel::from(cases.iter().map(|(t, _)| SharedString::from(t.as_str())).collect::<Vec<_>>())));
+    win.set_prompt_text(cases.first().map(|(_, t)| norm(t)).unwrap_or_default().into());
+    *CASES.lock().unwrap() = cases;
+    win.set_local_size_labels(ModelRc::new(VecModel::from(localstt::SIZES.iter().map(|z| SharedString::from(z.label())).collect::<Vec<_>>())));
+    win.set_ver_info(update_info_initial().into());
+    win.set_token_status(token_status().into());
+    refresh(win);
 }
 
 // ---------- testo e dati (parti pure, con test)
@@ -177,12 +218,11 @@ fn tile_data(p: Provider, cfg: &config::Config, enabled: bool, key: Option<&str>
     };
     let mut info = usage.to_string();
     if !p.supports_stt() {
-        info.push_str(" Solo correzione del testo: non trascrive l'audio.");
+        info.push(' ');
+        info.push_str(&t("gui.tile_text_only"));
     }
     if p.is_local() {
-        info = format!(
-            "Trascrive sul tuo PC: nessun dato esce e non serve credito. Piu' lento su CPU; il modello si carica solo mentre trascrive. Senza un servizio AI in rete il testo non viene corretto: viene incollata la trascrizione grezza. {usage}"
-        );
+        info = tf("gui.tile_local_info", &[("usage", usage)]);
     }
     TileData {
         id: p.id().into(),
@@ -191,7 +231,7 @@ fn tile_data(p: Provider, cfg: &config::Config, enabled: bool, key: Option<&str>
         has_key: available,
         ready: status.0,
         status: status.1,
-        key_note: key.map_or(String::new(), |k| format!("Chiave salvata: {}. Per cambiarla incollane una nuova.", config::mask_key(k))),
+        key_note: key.map_or(String::new(), |k| tf("gui.key_saved", &[("key", &config::mask_key(k))])),
         stt_model: stt,
         llm_model: llm,
         models_editable: editable,
@@ -258,8 +298,8 @@ fn model_of(cfg: &config::Config, p: Provider, stt: bool) -> String {
 fn home_data(cfg: &config::Config, order: &[Provider], ready: impl Fn(Provider) -> bool + Copy) -> HomeData {
     let pick = |stt: bool| match providers::first_active(order, ready, stt) {
         Some(p) => format!("{}\n{}", model_of(cfg, p, stt), p.name()),
-        None if !stt && providers::first_active(order, ready, true).is_some() => "Nessuna: testo non corretto".to_string(),
-        None => "Nessuna chiave configurata".to_string(),
+        None if !stt && providers::first_active(order, ready, true).is_some() => t("gui.home_no_correction"),
+        None => t("gui.home_no_key"),
     };
     HomeData {
         ai: pick(false),
@@ -268,16 +308,18 @@ fn home_data(cfg: &config::Config, order: &[Provider], ready: impl Fn(Provider) 
         keys: providers::ALL
             .iter()
             .map(|p| {
-                let (yes, no) = if p.is_local() { ("modello scaricato", "modello non scaricato") } else { ("chiave presente", "nessuna chiave") };
-                format!("{}: {}", p.name(), if ready(*p) { yes } else { no })
+                let (yes, no) = if p.is_local() { ("gui.home_model_yes", "gui.home_model_no") } else { ("gui.home_key_yes", "gui.home_key_no") };
+                format!("{}: {}", p.name(), t(if ready(*p) { yes } else { no }))
             })
             .collect::<Vec<_>>()
             .join("  |  "),
-        hotkey: format!(
-            "{}\n{}, lingua {}",
-            cfg.hotkey,
-            if cfg.is_toggle() { "premi per iniziare e fermare" } else { "tieni premuto" },
-            cfg.language
+        hotkey: tf(
+            "gui.home_hotkey",
+            &[
+                ("hotkey", &cfg.hotkey),
+                ("mode", &t(if cfg.is_toggle() { "gui.mode_toggle" } else { "gui.mode_hold" })),
+                ("lang", if cfg.language.trim().is_empty() { "auto" } else { cfg.language.trim() }),
+            ],
         ),
     }
 }
@@ -293,11 +335,11 @@ fn home_usage(order: &[Provider], status: impl Fn(Provider) -> (bool, String), u
 
 /// Riga sotto la tendina del modello locale: scaricato o no, e spazio occupato.
 fn local_detail(size: localstt::Size, downloaded: bool, disk: u64) -> String {
-    let disk_note = if disk > 0 { format!(" Spazio occupato dai modelli: {}.", localstt::format_bytes(disk)) } else { String::new() };
+    let disk_note = if disk > 0 { tf("gui.local_disk", &[("size", &localstt::format_bytes(disk))]) } else { String::new() };
     if downloaded {
-        format!("Modello {} scaricato e pronto.{disk_note}", size.id())
+        tf("gui.local_ready", &[("id", size.id()), ("disk", &disk_note)])
     } else {
-        format!("Modello {} non ancora scaricato (circa {}): premi Scarica.{disk_note}", size.id(), localstt::format_bytes(size.approx_bytes()))
+        tf("gui.local_missing", &[("id", size.id()), ("size", &localstt::format_bytes(size.approx_bytes())), ("disk", &disk_note)])
     }
 }
 
@@ -311,7 +353,7 @@ fn style_index(id: &str) -> i32 {
 fn model_lines(wanted: &[&str], ids: &[String]) -> Vec<String> {
     wanted
         .iter()
-        .map(|m| format!("{m}: {}", if ids.iter().any(|i| i == m) { "disponibile" } else { "NON disponibile nel tuo account" }))
+        .map(|m| format!("{m}: {}", t(if ids.iter().any(|i| i == m) { "gui.model_available" } else { "gui.model_unavailable" })))
         .collect()
 }
 
@@ -347,11 +389,13 @@ fn build_tiles(cfg: &config::Config) -> Vec<Tile> {
                 t.downloading = dl.is_some();
                 t.progress = dl.and_then(|(_, done, total)| localstt::fraction(done, total)).unwrap_or(-1.0);
                 t.local_detail = match dl {
-                    Some((z, done, total)) => format!(
-                        "Scarico {}: {}{}",
-                        z.id(),
-                        localstt::format_bytes(done),
-                        total.map_or(String::new(), |t| format!(" su {}", localstt::format_bytes(t)))
+                    Some((z, done, total)) => tf(
+                        "gui.local_downloading",
+                        &[
+                            ("id", z.id()),
+                            ("done", &localstt::format_bytes(done)),
+                            ("total", &total.map_or(String::new(), |n| tf("gui.local_of_total", &[("total", &localstt::format_bytes(n))]))),
+                        ],
                     ),
                     None => local_detail(size, available, localstt::disk_usage(config::dir())),
                 };
@@ -393,7 +437,7 @@ fn refresh(win: &SettingsWindow) {
     win.set_home_hotkey(h.hotkey.into());
     win.set_home_version(version_line().into());
     win.set_home_updates(update_state_line().into());
-    win.set_order_note(format!("Priorita' attuale: {}.", order.iter().map(|p| p.name()).collect::<Vec<_>>().join(" > ")).into());
+    win.set_order_note(tf("gui.order_note", &[("order", &order.iter().map(|p| p.name()).collect::<Vec<_>>().join(" > "))]).into());
     let usage_text = norm(&usage::report());
     if win.get_usage_text().as_str() != usage_text {
         win.set_usage_text(usage_text.into());
@@ -402,13 +446,12 @@ fn refresh(win: &SettingsWindow) {
     win.set_debug(config::debug_enabled());
     win.set_debug_text(cfg.debug_log_text);
     win.set_auto_update(config::auto_update_enabled());
-    win.set_log_line(format!("Log: {}", config::log_path().display()).into());
+    win.set_log_line(tf("gui.log_line", &[("path", &config::log_path().display().to_string())]).into());
     let exe = std::env::current_exe().map(|e| e.display().to_string()).unwrap_or_default();
     win.set_general_info(
-        format!(
-            "Programma: {exe}\nConfigurazione e chiavi: {}\nLog: {}\n\nTrascrittore audio registra dal microfono predefinito del sistema mentre usi la scorciatoia, trascrive e corregge il testo con i servizi AI scelti e lo incolla dove hai il cursore. Sta nella tray e usa poche risorse.",
-            config::dir().display(),
-            config::log_path().display()
+        tf(
+            "gui.general_info",
+            &[("exe", &exe), ("dir", &config::dir().display().to_string()), ("log", &config::log_path().display().to_string())],
         )
         .into(),
     );
@@ -492,6 +535,19 @@ fn wire(win: &SettingsWindow) {
         }
     });
 
+    win.on_set_language({
+        let weak = weak.clone();
+        move |i| {
+            let choices = language_choices();
+            let Some((code, _)) = choices.get(i.max(0) as usize) else { return };
+            config::set_ui_language(code);
+            i18n::init(code, Some(&config::dir().join("lang")));
+            if let Some(w) = weak.upgrade() {
+                relocalize(&w);
+            }
+        }
+    });
+
     win.on_select_prompt(|i| {
         let text = CASES.lock().unwrap().get(i.max(0) as usize).map(|(_, t)| norm(t));
         if let Some(t) = text {
@@ -535,7 +591,7 @@ fn wire(win: &SettingsWindow) {
                         e.1 = true; // ne serve almeno uno
                     }
                     drop(l);
-                    set_tile_ui(p, |x| x.1 = "Almeno un servizio deve restare in uso.".into());
+                    set_tile_ui(p, |x| x.1 = t("gui.min_one_service"));
                 }
             }
             save_layout();
@@ -562,7 +618,7 @@ fn wire(win: &SettingsWindow) {
         move || {
             let size = config::local_size();
             localstt::delete(config::dir(), size);
-            set_tile_ui(Provider::Local, |x| x.1 = format!("Modello {} eliminato.", size.id()));
+            set_tile_ui(Provider::Local, |x| x.1 = tf("gui.model_deleted", &[("id", size.id())]));
             if let Some(w) = weak.upgrade() {
                 refresh(&w);
             }
@@ -583,7 +639,7 @@ fn wire(win: &SettingsWindow) {
                 *dl = Some((size, 0, None));
             }
             CANCEL.store(false, Ordering::Relaxed);
-            set_tile_ui(Provider::Local, |x| x.1 = format!("Scarico il modello {} da Hugging Face...", size.id()));
+            set_tile_ui(Provider::Local, |x| x.1 = tf("gui.model_downloading", &[("id", size.id())]));
             if let Some(w) = weak.upgrade() {
                 refresh(&w);
             }
@@ -599,8 +655,8 @@ fn wire(win: &SettingsWindow) {
                 });
                 *DL.lock().unwrap() = None;
                 let msg = match r {
-                    Ok(()) => format!("Modello {} scaricato: la trascrizione locale e' pronta.", size.id()),
-                    Err(e) => format!("Download non riuscito: {e}"),
+                    Ok(()) => tf("gui.model_done", &[("id", size.id())]),
+                    Err(e) => tf("gui.download_failed", &[("err", &e)]),
                 };
                 config::log(&msg);
                 set_tile_ui(Provider::Local, |x| x.1 = msg);
@@ -618,7 +674,7 @@ fn wire(win: &SettingsWindow) {
                 Provider::Anthropic => config::set_provider_models("", "", &llm),
                 Provider::Groq | Provider::Local => {}
             }
-            set_tile_ui(p, |x| x.1 = "Modelli salvati: valgono dalla prossima dettatura. Campi vuoti o con spazi ignorati.".into());
+            set_tile_ui(p, |x| x.1 = t("gui.models_saved"));
             if let Some(w) = weak.upgrade() {
                 refresh(&w);
             }
@@ -630,8 +686,8 @@ fn wire(win: &SettingsWindow) {
         move |id| {
             let Some(p) = provider_by_id(&id) else { return };
             let msg = match config::save_provider_key(p, "") {
-                Ok(()) => format!("Chiave {} rimossa.", p.name()),
-                Err(e) => format!("Impossibile rimuovere la chiave: {e}"),
+                Ok(()) => tf("gui.key_removed", &[("name", p.name())]),
+                Err(e) => tf("gui.key_remove_failed", &[("err", &e.to_string())]),
             };
             set_tile_ui(p, |x| x.1 = msg);
             if let Some(w) = weak.upgrade() {
@@ -645,7 +701,7 @@ fn wire(win: &SettingsWindow) {
         move |id, typed| {
             let Some(p) = provider_by_id(&id) else { return };
             set_tile_ui(p, |x| {
-                x.1 = "Verifica in corso...".into();
+                x.1 = t("gui.verifying");
                 x.2 = true;
             });
             if let Some(w) = weak.upgrade() {
@@ -654,8 +710,7 @@ fn wire(win: &SettingsWindow) {
             let typed = typed.trim().to_string();
             let weak = weak.clone();
             std::thread::spawn(move || {
-                let msg = verify_provider(p, typed);
-                let saved = msg.contains("salvata");
+                let (msg, saved) = verify_provider(p, typed);
                 set_tile_ui(p, |x| {
                     x.1 = msg;
                     x.2 = false;
@@ -674,12 +729,11 @@ fn wire(win: &SettingsWindow) {
             let typed = typed.trim().to_string();
             if let Some(w) = weak.upgrade() {
                 w.set_token_busy(true);
-                w.set_token_status("Verifica in corso...".into());
+                w.set_token_status(t("gui.verifying").into());
             }
             let weak = weak.clone();
             std::thread::spawn(move || {
-                let (msg, update) = verify_and_save_token(typed);
-                let saved = msg.starts_with("Token valido e salvato");
+                let (msg, update, saved) = verify_and_save_token(typed);
                 let _ = weak.upgrade_in_event_loop(move |w| {
                     w.set_token_status(norm(&msg).into());
                     w.set_token_busy(false);
@@ -701,7 +755,7 @@ fn wire(win: &SettingsWindow) {
         move || {
             let msg = match config::clear_update_token() {
                 Ok(()) => token_status(),
-                Err(e) => format!("Impossibile rimuovere il token: {e}"),
+                Err(e) => tf("gui.token_remove_failed", &[("err", &e.to_string())]),
             };
             if let Some(w) = weak.upgrade() {
                 w.set_token_status(msg.into());
@@ -724,25 +778,25 @@ fn wire(win: &SettingsWindow) {
 
 /// "Versione installata: 2026.10.25.3 (build abc1234)" oppure "locale (build locale)".
 fn version_line() -> String {
-    let build = release::current_commit().map_or("build locale".to_string(), |c| format!("build {}", release::short(c)));
-    let version = release::current_version().map_or("locale".to_string(), |v| v.to_string());
-    format!("Versione installata: {version} ({build})")
+    let build = release::current_commit().map_or(t("gui.build_local"), |c| tf("gui.build_id", &[("id", release::short(c))]));
+    let version = release::current_version().map_or(t("gui.version_local"), |v| v.to_string());
+    tf("gui.version_line", &[("version", &version), ("build", &build)])
 }
 
 /// Esito del controllo online (senza installare nulla), come testo per la finestra.
 fn update_report(token: &str) -> String {
     match updater::fetch_latest(token) {
-        Ok(r) if release::needs_update(release::current_version(), r.version) => format!(
-            "{}\nAggiornamento disponibile: {} (installata {}).",
-            version_line(),
-            r.version,
-            release::current_version().map_or("locale".to_string(), |v| v.to_string())
+        Ok(r) if release::needs_update(release::current_version(), r.version) => tf(
+            "gui.update_available",
+            &[
+                ("line", &version_line()),
+                ("new", &r.version.to_string()),
+                ("current", &release::current_version().map_or(t("gui.version_local"), |v| v.to_string())),
+            ],
         ),
-        Ok(r) if release::current_version().is_none() => {
-            format!("{}\nBuild locale: gli aggiornamenti automatici non si applicano (online c'e' la {}).", version_line(), r.version)
-        }
-        Ok(r) => format!("{}\nSei aggiornato: l'ultima versione online e' la {}.", version_line(), r.version),
-        Err(e) => format!("{}\nControllo aggiornamenti non riuscito: {e}", version_line()),
+        Ok(r) if release::current_version().is_none() => tf("gui.update_local_build", &[("line", &version_line()), ("new", &r.version.to_string())]),
+        Ok(r) => tf("gui.update_current", &[("line", &version_line()), ("new", &r.version.to_string())]),
+        Err(e) => tf("gui.update_check_failed", &[("line", &version_line()), ("err", &e)]),
     }
 }
 
@@ -750,13 +804,13 @@ fn update_report(token: &str) -> String {
 fn manual_update(weak: slint::Weak<SettingsWindow>, apply: bool) {
     let Some(token) = config::update_token() else {
         if let Some(w) = weak.upgrade() {
-            w.set_upd_result("Nessun token GitHub: inseriscilo qui sotto, oppure scarica a mano il nuovo installer dalla pagina Release.".into());
+            w.set_upd_result(t("gui.upd_no_token").into());
         }
         return;
     };
     if let Some(w) = weak.upgrade() {
         w.set_upd_busy(true);
-        w.set_upd_result("Controllo in corso...".into());
+        w.set_upd_result(t("gui.upd_checking").into());
     }
     std::thread::spawn(move || {
         let post = |text: String, done: bool| {
@@ -771,12 +825,12 @@ fn manual_update(weak: slint::Weak<SettingsWindow>, apply: bool) {
         let report = update_report(&token);
         let newer = updater::fetch_latest(&token).map_or(false, |r| release::needs_update(release::current_version(), r.version));
         if apply && newer {
-            let how = if cfg!(target_os = "linux") { "compare la richiesta della password" } else { "Windows puo' chiedere i permessi di amministratore" };
-            post(format!("{report}\nScarico e installo: il programma si riavvia tra pochi secondi ({how})."), false);
+            let how = t(if cfg!(target_os = "linux") { "gui.upd_how_linux" } else { "gui.upd_how_windows" });
+            post(tf("gui.upd_installing", &[("report", &report), ("how", &how)]), false);
             std::thread::sleep(Duration::from_secs(3)); // il tempo di leggere il messaggio
             match updater::check_and_apply(&token) {
-                Ok(_) => post(format!("{report}\nGia' aggiornato."), true),
-                Err(e) => post(format!("{report}\nAggiornamento non riuscito: {e}"), true),
+                Ok(_) => post(tf("gui.upd_already", &[("report", &report)]), true),
+                Err(e) => post(tf("gui.upd_failed", &[("report", &report), ("err", &e)]), true),
             }
         } else {
             post(report, true);
@@ -787,27 +841,27 @@ fn manual_update(weak: slint::Weak<SettingsWindow>, apply: bool) {
 /// Stato del token GitHub.
 fn token_status() -> String {
     match config::update_token() {
-        Some(t) => format!("Token salvato: {}. Per cambiarlo incolla quello nuovo e premi \"Verifica e salva\".", config::mask_key(&t)),
-        None => "Nessun token salvato: gli aggiornamenti automatici non sono disponibili. Incolla un token qui sopra (\"Crea token\" apre la pagina), oppure aggiorna a mano scaricando il nuovo installer dalla pagina Release.".to_string(),
+        Some(tok) => tf("gui.token_saved", &[("token", &config::mask_key(&tok))]),
+        None => t("gui.token_none"),
     }
 }
 
 /// Stato degli aggiornamenti automatici in una riga.
-fn update_state_line() -> &'static str {
-    match (config::update_token().is_some(), config::auto_update_enabled()) {
-        (false, _) => "Aggiornamenti automatici: non disponibili (nessun token GitHub).",
-        (true, false) => "Aggiornamenti automatici: disattivati.",
-        (true, true) => "Aggiornamenti automatici: attivi.",
-    }
+fn update_state_line() -> String {
+    t(match (config::update_token().is_some(), config::auto_update_enabled()) {
+        (false, _) => "gui.upd_state_unavailable",
+        (true, false) => "gui.upd_state_off",
+        (true, true) => "gui.upd_state_on",
+    })
 }
 
 /// Versione e stato degli aggiornamenti (sezione Info).
 fn update_info_initial() -> String {
-    let state = match (config::update_token().is_some(), config::auto_update_enabled()) {
-        (false, _) => "Aggiornamenti automatici: non disponibili (nessun token GitHub). Per aggiornare scarica a mano il nuovo installer dalla pagina Release.",
-        (true, false) => "Aggiornamenti automatici: DISATTIVATI (attivali qui sotto).",
-        (true, true) => "Aggiornamenti automatici: attivi. Controllo in corso...",
-    };
+    let state = t(match (config::update_token().is_some(), config::auto_update_enabled()) {
+        (false, _) => "gui.upd_info_unavailable",
+        (true, false) => "gui.upd_info_off",
+        (true, true) => "gui.upd_info_on",
+    });
     format!("{}\n{state}", version_line())
 }
 
@@ -826,32 +880,33 @@ fn check_update_in_background(weak: slint::Weak<SettingsWindow>) {
 // ---------- verifica chiavi e token (rete)
 
 /// Prova la chiave di un servizio elencando i modelli e, se funziona e ne e' stata scritta una nuova, la salva.
-fn verify_provider(p: Provider, typed: String) -> String {
+/// Returns the message and whether a new key was saved.
+fn verify_provider(p: Provider, typed: String) -> (String, bool) {
     let key = if typed.is_empty() {
         match config::provider_key(p) {
             Some(k) => k,
-            None => return format!("Inserisci la chiave API {}.", p.name()),
+            None => return (tf("gui.key_enter", &[("name", p.name())]), false),
         }
     } else {
         typed.clone()
     };
     if key.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return "La chiave non deve contenere spazi.".into();
+        return (t("gui.key_no_spaces"), false);
     }
     let listed = match p {
         Provider::Anthropic => anthropic::Anthropic::new(key.clone()).and_then(|a| a.list_models().map_err(|e| e.to_string())),
         Provider::Groq => oai::Oai::groq(key.clone()).and_then(|g| g.list_models().map_err(|e| e.to_string())),
         Provider::OpenAi => oai::Oai::new(p, key.clone()).and_then(|o| o.list_models().map_err(|e| e.to_string())),
-        Provider::Local => return "Il servizio locale non usa chiavi.".into(),
+        Provider::Local => return (t("gui.key_local"), false),
     };
     let ids = match listed {
         Ok(v) => v,
-        Err(e) => return format!("Chiave {} NON valida o rete non raggiungibile.\n{e}", p.name()),
+        Err(e) => return (tf("gui.key_invalid", &[("name", p.name()), ("err", &e)]), false),
     };
     let saved = !typed.is_empty();
     if saved {
         if let Err(e) = config::save_provider_key(p, &key) {
-            return format!("La chiave funziona ma non e' stato possibile salvarla: {e}");
+            return (tf("gui.key_save_failed", &[("err", &e.to_string())]), false);
         }
     }
     let cfg = config::load();
@@ -861,41 +916,42 @@ fn verify_provider(p: Provider, typed: String) -> String {
         Provider::Anthropic => vec![cfg.anthropic_llm_model.as_str()],
         Provider::Local => vec![],
     };
-    format!("Chiave {} valida{}.\n{}", p.name(), if saved { " e salvata" } else { "" }, model_lines(&wanted, &ids).join("\n"))
+    let msg = tf(if saved { "gui.key_valid_saved" } else { "gui.key_valid" }, &[("name", p.name()), ("lines", &model_lines(&wanted, &ids).join("\n"))]);
+    (msg, saved)
 }
 
 /// Prova il token su GitHub e, se funziona e ne e' stato scritto uno nuovo, lo salva in .env.
-/// Il secondo valore e' il token se c'e' un aggiornamento da installare subito.
-fn verify_and_save_token(typed: String) -> (String, Option<String>) {
+/// Returns the message, the token if there is an update to install right now, and whether a new token was saved.
+fn verify_and_save_token(typed: String) -> (String, Option<String>, bool) {
     let token = if typed.is_empty() {
         match config::update_token() {
             Some(t) => t,
-            None => return ("Inserisci il token GitHub (vedi README).".into(), None),
+            None => return (t("gui.token_enter"), None, false),
         }
     } else {
         typed.clone()
     };
     if token.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return ("Il token non deve contenere spazi.".into(), None);
+        return (t("gui.token_no_spaces"), None, false);
     }
     let rel = match updater::fetch_latest(&token) {
         Ok(r) => r,
-        Err(e) => return (format!("Token non utilizzabile.\n{e}"), None),
+        Err(e) => return (tf("gui.token_unusable", &[("err", &e)]), None, false),
     };
     let saved = !typed.is_empty();
     if saved {
         if let Err(e) = config::save_update_token(&token) {
-            return (format!("Il token funziona ma non e' stato possibile salvarlo: {e}"), None);
+            return (tf("gui.token_save_failed", &[("err", &e.to_string())]), None, false);
         }
     }
-    let head = format!("Token valido{}. Aggiornamenti automatici attivi.", if saved { " e salvato" } else { "" });
+    let head = t(if saved { "gui.token_valid_saved" } else { "gui.token_valid" });
     let newer = release::needs_update(release::current_version(), rel.version);
     if newer && !config::auto_update_enabled() {
-        (format!("{head}\nC'e' una versione piu' recente ({}), ma gli aggiornamenti automatici sono disattivati: spunta la casella qui sopra, oppure usa \"Aggiorna ora\".", rel.version), None)
+        (tf("gui.token_newer_off", &[("head", &head), ("new", &rel.version.to_string())]), None, saved)
     } else if newer {
-        (format!("{head}\nVersione online {} piu' recente: la scarico e riavvio il programma tra pochi secondi.", rel.version), Some(token))
+        (tf("gui.token_newer_on", &[("head", &head), ("new", &rel.version.to_string())]), Some(token), saved)
     } else {
-        (format!("{head}\n{}\nSei gia' all'ultima versione.", version_line()), None)
+        (tf("gui.token_latest", &[("head", &head), ("line", &version_line())]), None, saved)
     }
 }
 
@@ -937,9 +993,9 @@ mod tests {
         assert!(t.has_key && t.ready && !t.models_editable && t.supports_stt);
         assert!(t.key_note.contains("...1234"));
         assert!(t.llm_model.contains("openai/gpt-oss-120b") && t.llm_model.contains("gpt-oss-20b"));
-        let a = tile_data(Provider::Anthropic, &cfg, false, None, false, (false, "Nessuna chiave".into()), "x");
+        let a = tile_data(Provider::Anthropic, &cfg, false, None, false, (false, "No key".into()), "x");
         assert!(!a.has_key && a.models_editable && !a.supports_stt && a.stt_model.is_empty());
-        assert!(a.info.contains("Solo correzione del testo"));
+        assert!(a.info.contains("Text correction only"));
         assert_eq!(a.llm_model, cfg.anthropic_llm_model);
         assert!(a.key_note.is_empty());
     }
@@ -953,10 +1009,10 @@ mod tests {
         // Anthropic non trascrive: la trascrizione passa al primo servizio che la sa fare
         assert!(h.stt.starts_with(&cfg.stt_model) && h.stt.contains("Groq"));
         assert_eq!(h.order, "1. Anthropic   2. OpenAI   3. Groq");
-        assert!(h.keys.contains("OpenAI: nessuna chiave") && h.keys.contains("Groq: chiave presente"));
+        assert!(h.keys.contains("OpenAI: no key") && h.keys.contains("Groq: key present"));
         assert!(h.hotkey.starts_with("ctrl+win"));
         let none = home_data(&cfg, &order, |_| false);
-        assert_eq!(none.ai, "Nessuna chiave configurata");
+        assert_eq!(none.ai, "No key configured");
     }
 
     #[test]
@@ -964,39 +1020,39 @@ mod tests {
         let cfg = config::Config::default();
         let order = [Provider::Groq, Provider::OpenAi, Provider::Local];
         let h = home_data(&cfg, &order, |p| p == Provider::Local);
-        assert!(h.stt.starts_with("whisper base") && h.stt.contains("Locale (Whisper)"));
-        assert_eq!(h.ai, "Nessuna: testo non corretto", "il locale non corregge il testo");
-        assert!(h.keys.contains("Locale (Whisper): modello scaricato") && h.keys.contains("Groq: nessuna chiave"));
+        assert!(h.stt.starts_with("whisper base") && h.stt.contains("Local (Whisper)"));
+        assert_eq!(h.ai, "None: text is not corrected", "local does not correct the text");
+        assert!(h.keys.contains("Local (Whisper): model downloaded") && h.keys.contains("Groq: no key"));
         let h = home_data(&cfg, &order, |_| false);
-        assert!(h.keys.contains("Locale (Whisper): modello non scaricato"));
+        assert!(h.keys.contains("Local (Whisper): model not downloaded"));
     }
 
     #[test]
     fn local_tile_is_about_the_model_not_a_key() {
         let cfg = config::Config { local_model: "small".into(), ..config::Config::default() };
-        let t = tile_data(Provider::Local, &cfg, true, None, true, (true, "Pronto".into()), "Dall'avvio: 2 trascrizioni.");
+        let t = tile_data(Provider::Local, &cfg, true, None, true, (true, "Ready".into()), "Since start: 2 transcriptions.");
         assert!(t.is_local && t.has_key && !t.models_editable);
         assert_eq!(t.local_index, 2);
-        assert!(t.info.contains("nessun dato esce") && t.info.contains("trascrizione grezza"));
+        assert!(t.info.contains("no data leaves it") && t.info.contains("raw transcription"));
         assert!(t.key_note.is_empty());
     }
 
     #[test]
     fn local_detail_says_what_to_do() {
         let d = local_detail(localstt::Size::Base, false, 0);
-        assert!(d.contains("non ancora scaricato") && d.contains("142 MB") && d.contains("Scarica"));
+        assert!(d.contains("not downloaded yet") && d.contains("142 MB") && d.contains("Download"));
         let d = local_detail(localstt::Size::Small, true, 466_000_000);
-        assert!(d.contains("small scaricato e pronto") && d.contains("466 MB"));
+        assert!(d.contains("small downloaded and ready") && d.contains("466 MB"));
     }
 
     #[test]
     fn home_usage_has_one_line_per_service() {
         let r = home_usage(
             &[Provider::Groq, Provider::OpenAi],
-            |p| (true, if p == Provider::Groq { "Pronto".into() } else { "Nessuna chiave".into() }),
-            |_| "Dall'avvio: 2 chiamate, 10 token. Il credito residuo non e' leggibile via API.".into(),
+            |p| (true, if p == Provider::Groq { "Ready".into() } else { "No key".into() }),
+            |_| "Since start: 2 calls, 10 tokens. The remaining credit cannot be read via API.".into(),
         );
-        assert_eq!(r, "Groq: Pronto  -  Dall'avvio: 2 chiamate, 10 token\nOpenAI: Nessuna chiave  -  Dall'avvio: 2 chiamate, 10 token");
+        assert_eq!(r, "Groq: Ready  -  Since start: 2 calls, 10 tokens\nOpenAI: No key  -  Since start: 2 calls, 10 tokens");
     }
 
     #[test]
@@ -1008,6 +1064,6 @@ mod tests {
     #[test]
     fn model_lines_flag_missing_models() {
         let ids = vec!["a".to_string(), "b".to_string()];
-        assert_eq!(model_lines(&["a", "z"], &ids), vec!["a: disponibile", "z: NON disponibile nel tuo account"]);
+        assert_eq!(model_lines(&["a", "z"], &ids), vec!["a: available", "z: NOT available in your account"]);
     }
 }

@@ -190,7 +190,7 @@ fn key(vk: u16, up: bool) -> INPUT {
 pub fn paste_text(text: &str, paste: &str, restore: bool, send_enter: bool) -> Result<(), String> {
     let previous = if restore { get_clipboard_text() } else { None };
     if !set_clipboard_text(text) {
-        return Err("appunti non accessibili".into());
+        return Err(crate::i18n::t("err.clipboard"));
     }
     std::thread::sleep(std::time::Duration::from_millis(40));
     let (modifier, vk) = if paste.eq_ignore_ascii_case("shift+insert") {

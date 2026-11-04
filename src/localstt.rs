@@ -56,11 +56,12 @@ impl Size {
     /// Testo dell'elenco a discesa.
     pub fn label(self) -> String {
         let note = match self {
-            Size::Tiny => "velocissimo, meno preciso",
-            Size::Base => "consigliato",
-            Size::Small => "piu' preciso, piu' lento",
-            Size::Medium => "molto preciso, lento su CPU",
+            Size::Tiny => "size.tiny",
+            Size::Base => "size.base",
+            Size::Small => "size.small",
+            Size::Medium => "size.medium",
         };
+        let note = crate::i18n::t(note);
         format!("{} - {} ({note})", self.id(), format_bytes(self.approx_bytes()))
     }
 }
@@ -98,12 +99,12 @@ fn part_path(p: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// "142 MB", "1,5 GB" (virgola come in italiano).
+/// "142 MB", "1.5 GB" (the decimal separator comes from the language file: "1,5 GB" in Italian).
 pub fn format_bytes(n: u64) -> String {
     const MB: f64 = 1_000_000.0;
     let mb = n as f64 / MB;
     if mb >= 1000.0 {
-        format!("{:.1} GB", mb / 1000.0).replace('.', ",")
+        format!("{:.1} GB", mb / 1000.0).replace('.', &crate::i18n::t("fmt.decimal_separator"))
     } else if mb >= 1.0 {
         format!("{:.0} MB", mb)
     } else {
@@ -136,7 +137,7 @@ pub fn wav_to_samples(wav: &[u8]) -> Result<Vec<f32>, String> {
     let mut r = hound::WavReader::new(Cursor::new(wav)).map_err(|e| e.to_string())?;
     let spec = r.spec();
     if spec.sample_format != hound::SampleFormat::Int || spec.bits_per_sample != 16 || spec.channels != 1 || spec.sample_rate != 16_000 {
-        return Err(format!("audio non adatto a Whisper: {spec:?}"));
+        return Err(crate::i18n::tf("err.audio_whisper", &[("spec", &format!("{spec:?}"))]));
     }
     r.samples::<i16>().map(|s| s.map(|v| v as f32 / i16::MAX as f32).map_err(|e| e.to_string())).collect()
 }
@@ -144,8 +145,8 @@ pub fn wav_to_samples(wav: &[u8]) -> Result<Vec<f32>, String> {
 /// Trascrive sul PC. Carica il modello, trascrive e lo libera alla fine. `language`: "it", "en"... oppure "auto".
 pub fn transcribe(model: &Path, samples: &[f32], language: &str) -> Result<String, String> {
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
-    let path = model.to_str().ok_or("percorso del modello non valido")?;
-    let ctx = WhisperContext::new_with_params(path, WhisperContextParameters::default()).map_err(|e| format!("modello locale non caricabile: {e}"))?;
+    let path = model.to_str().ok_or_else(|| crate::i18n::t("err.model_path"))?;
+    let ctx = WhisperContext::new_with_params(path, WhisperContextParameters::default()).map_err(|e| crate::i18n::tf("err.model_load", &[("err", &e.to_string())]))?;
     let mut state = ctx.create_state().map_err(|e| e.to_string())?;
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     let lang = language.trim().to_ascii_lowercase();
@@ -158,7 +159,7 @@ pub fn transcribe(model: &Path, samples: &[f32], language: &str) -> Result<Strin
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
-    state.full(params, samples).map_err(|e| format!("trascrizione locale non riuscita: {e}"))?;
+    state.full(params, samples).map_err(|e| crate::i18n::tf("err.local_failed", &[("err", &e.to_string())]))?;
     let mut text = String::new();
     for i in 0..state.full_n_segments() {
         if let Some(seg) = state.get_segment(i) {
@@ -172,7 +173,7 @@ pub fn transcribe(model: &Path, samples: &[f32], language: &str) -> Result<Strin
 /// Controlla il SHA-256 dichiarato da Hugging Face e il numero magico; `cancel` interrompe e cancella il parziale.
 pub fn download(data_dir: &Path, size: Size, cancel: &AtomicBool, mut on_progress: impl FnMut(u64, Option<u64>)) -> Result<(), String> {
     let dest = model_path(data_dir, size);
-    std::fs::create_dir_all(models_dir(data_dir)).map_err(|e| format!("cartella dei modelli non creabile: {e}"))?;
+    std::fs::create_dir_all(models_dir(data_dir)).map_err(|e| crate::i18n::tf("err.models_dir", &[("err", &e.to_string())]))?;
     let part = part_path(&dest);
     let url = size.url();
 
@@ -186,21 +187,21 @@ pub fn download(data_dir: &Path, size: Size, cancel: &AtomicBool, mut on_progres
         .and_then(|r| r.headers().get("x-linked-etag").and_then(|v| v.to_str().ok()).and_then(etag_sha256));
 
     let client = reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(30)).build().map_err(|e| e.to_string())?;
-    let mut resp = client.get(&url).send().map_err(|e| format!("rete: {e}"))?;
+    let mut resp = client.get(&url).send().map_err(|e| crate::i18n::tf("err.network", &[("msg", &e.to_string())]))?;
     if !resp.status().is_success() {
-        return Err(format!("download rifiutato (HTTP {})", resp.status().as_u16()));
+        return Err(crate::i18n::tf("err.download_refused", &[("status", &resp.status().as_u16().to_string())]));
     }
     let total = resp.content_length();
-    let mut file = std::fs::File::create(&part).map_err(|e| format!("file non creabile: {e}"))?;
+    let mut file = std::fs::File::create(&part).map_err(|e| crate::i18n::tf("err.file_create", &[("err", &e.to_string())]))?;
     let (mut hasher, mut done, mut buf) = (Sha256::new(), 0u64, vec![0u8; 64 * 1024]);
     let mut first = true;
     loop {
         if cancel.load(Ordering::Relaxed) {
             drop(file);
             let _ = std::fs::remove_file(&part);
-            return Err("download annullato".into());
+            return Err(crate::i18n::t("err.download_cancelled"));
         }
-        let n = resp.read(&mut buf).map_err(|e| format!("rete: {e}"))?;
+        let n = resp.read(&mut buf).map_err(|e| crate::i18n::tf("err.network", &[("msg", &e.to_string())]))?;
         if n == 0 {
             break;
         }
@@ -209,27 +210,27 @@ pub fn download(data_dir: &Path, size: Size, cancel: &AtomicBool, mut on_progres
             if !has_ggml_magic(&buf[..n]) {
                 drop(file);
                 let _ = std::fs::remove_file(&part);
-                return Err("il file scaricato non e' un modello Whisper".into());
+                return Err(crate::i18n::t("err.not_whisper"));
             }
         }
         hasher.update(&buf[..n]);
-        file.write_all(&buf[..n]).map_err(|e| format!("scrittura: {e}"))?;
+        file.write_all(&buf[..n]).map_err(|e| crate::i18n::tf("err.write", &[("err", &e.to_string())]))?;
         done += n as u64;
         on_progress(done, total);
     }
     drop(file);
     if total.map_or(false, |t| t != done) {
         let _ = std::fs::remove_file(&part);
-        return Err("download incompleto: riprova".into());
+        return Err(crate::i18n::t("err.download_incomplete"));
     }
     if let Some(want) = expected {
         let got = hex(&hasher.finalize());
         if got != want {
             let _ = std::fs::remove_file(&part);
-            return Err("il file scaricato e' corrotto (SHA-256 diverso): riprova".into());
+            return Err(crate::i18n::t("err.download_corrupt"));
         }
     }
-    std::fs::rename(&part, &dest).map_err(|e| format!("impossibile completare il modello: {e}"))
+    std::fs::rename(&part, &dest).map_err(|e| crate::i18n::tf("err.model_finish", &[("err", &e.to_string())]))
 }
 
 #[cfg(test)]
@@ -261,7 +262,7 @@ mod tests {
     #[test]
     fn bytes_are_formatted_in_italian() {
         assert_eq!(format_bytes(142_000_000), "142 MB");
-        assert_eq!(format_bytes(1_530_000_000), "1,5 GB");
+        assert_eq!(format_bytes(1_530_000_000), "1.5 GB");
         assert_eq!(format_bytes(500_000), "500 KB");
     }
 

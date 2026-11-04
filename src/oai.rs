@@ -101,9 +101,9 @@ impl Oai {
         crate::providers::record_use(self.provider, tokens);
         crate::config::debug(|| {
             format!(
-                "{} {}: HTTP {} in {} ms, {} token",
+                "{} {}: HTTP {} in {} ms, {} tokens",
                 self.provider.name(),
-                if model.is_empty() { "(elenco modelli)" } else { model },
+                if model.is_empty() { "(model list)" } else { model },
                 status.as_u16(),
                 started.elapsed().as_millis(),
                 tokens

@@ -75,19 +75,19 @@ fn find_asset(v: &Value, name: &str) -> Result<Asset, String> {
     let a = v["assets"]
         .as_array()
         .and_then(|a| a.iter().find(|x| x["name"].as_str() == Some(name)))
-        .ok_or_else(|| format!("{name} non presente nella release"))?;
-    let url = a["url"].as_str().ok_or("asset senza url")?.to_string();
+        .ok_or_else(|| crate::i18n::tf("err.asset_missing", &[("name", name)]))?;
+    let url = a["url"].as_str().ok_or_else(|| crate::i18n::t("err.asset_no_url"))?.to_string();
     if !url.starts_with(ASSET_PREFIX) {
-        return Err("url dell'asset non atteso".into());
+        return Err(crate::i18n::t("err.asset_bad_url"));
     }
     Ok(Asset { url, digest: a["digest"].as_str().map(String::from) })
 }
 
 pub fn parse_release(json: &str) -> Result<Release, String> {
     let v: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
-    let commit = v["target_commitish"].as_str().ok_or("release senza commit")?.to_string();
+    let commit = v["target_commitish"].as_str().ok_or_else(|| crate::i18n::t("err.release_no_commit"))?.to_string();
     let tag = v["tag_name"].as_str().unwrap_or("");
-    let version = Version::parse(tag).ok_or_else(|| format!("la release \"{tag}\" non ha una versione AAAA.MM.GG.N"))?;
+    let version = Version::parse(tag).ok_or_else(|| crate::i18n::tf("err.release_bad_tag", &[("tag", tag)]))?;
     Ok(Release {
         version,
         commit,
@@ -102,20 +102,16 @@ pub fn parse_release(json: &str) -> Result<Release, String> {
 /// anche quando il token non ha accesso: per distinguere i casi si guarda se il token vede il repository
 /// (`repo_status` = esito di GET /repos/aleDiPi/audio_trascriptor con lo stesso token, se e' stato provato).
 pub fn explain_github_failure(status: u16, repo_status: Option<u16>, api_message: &str) -> String {
-    let detail = if api_message.is_empty() { String::new() } else { format!(" (GitHub: \"{api_message}\")") };
-    let no_access = "Il token non vede il repository aleDiPi/audio_trascriptor: nella pagina di creazione controlla \
-        Resource owner = aleDiPi, Repository access = solo audio_trascriptor e Permissions > Contents = Read-only.";
-    match (status, repo_status) {
-        (401, _) | (404 | 403, Some(401)) => format!("GitHub non accetta il token (errato, revocato o scaduto){detail}."),
-        (404, Some(200)) => format!(
-            "Il token e' valido e vede il repository, ma non c'e' ancora nessuna release pubblicata \
-             (la pubblicazione richiede un paio di minuti dopo ogni modifica): riprova piu' tardi{detail}."
-        ),
-        (404 | 403, Some(404 | 403)) => format!("{no_access}{detail}"),
-        (403, _) => format!("GitHub nega l'accesso (permessi insufficienti o troppe richieste){detail}."),
-        (404, None) => format!("GitHub HTTP 404: release non trovata oppure token senza accesso al repository{detail}."),
-        (s, _) => format!("GitHub HTTP {s}{detail}."),
-    }
+    let detail = if api_message.is_empty() { String::new() } else { crate::i18n::tf("gh.detail", &[("message", api_message)]) };
+    let key = match (status, repo_status) {
+        (401, _) | (404 | 403, Some(401)) => "gh.bad_token",
+        (404, Some(200)) => "gh.no_release",
+        (404 | 403, Some(404 | 403)) => "gh.no_access",
+        (403, _) => "gh.forbidden",
+        (404, None) => "gh.not_found",
+        _ => "gh.http",
+    };
+    crate::i18n::tf(key, &[("detail", &detail), ("status", &status.to_string())])
 }
 
 /// Testo del campo "message" di una risposta d'errore di GitHub ("" se assente).
@@ -261,13 +257,13 @@ mod tests {
     fn explains_404_depending_on_repo_access() {
         // il token vede il repository: la release manca (e' in ricostruzione)
         let m = explain_github_failure(404, Some(200), "Not Found");
-        assert!(m.contains("valido") && m.contains("riprova"), "{m}");
+        assert!(m.contains("valid") && m.contains("try again"), "{m}");
         // il token non vede il repository: problema di permessi, non di scadenza
         let m = explain_github_failure(404, Some(404), "Not Found");
-        assert!(m.contains("Resource owner") && m.contains("Contents") && !m.contains("scaduto"), "{m}");
+        assert!(m.contains("Resource owner") && m.contains("Contents") && !m.contains("expired"), "{m}");
         // token rifiutato
-        assert!(explain_github_failure(401, None, "Bad credentials").contains("scaduto"));
-        assert!(explain_github_failure(404, Some(401), "").contains("scaduto"));
+        assert!(explain_github_failure(401, None, "Bad credentials").contains("expired"));
+        assert!(explain_github_failure(404, Some(401), "").contains("expired"));
         // sonda non eseguita
         assert!(explain_github_failure(404, None, "").contains("404"));
         assert!(explain_github_failure(500, None, "").contains("500"));

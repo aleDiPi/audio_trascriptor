@@ -21,7 +21,7 @@ pub fn request_body(model: &str, system: &str, text: &str) -> serde_json::Value 
         "max_tokens": MAX_TOKENS,
         "system": system,
         "messages": [
-            {"role": "user", "content": format!("<trascrizione>{text}</trascrizione>")}
+            {"role": "user", "content": format!("<transcription>{text}</transcription>")}
         ]
     })
 }
@@ -82,8 +82,8 @@ impl Anthropic {
         crate::providers::record_use(Provider::Anthropic, tokens);
         crate::config::debug(|| {
             format!(
-                "Anthropic {}: HTTP {} in {} ms, {} token",
-                if model.is_empty() { "(elenco modelli)" } else { model },
+                "Anthropic {}: HTTP {} in {} ms, {} tokens",
+                if model.is_empty() { "(model list)" } else { model },
                 status.as_u16(),
                 started.elapsed().as_millis(),
                 tokens
@@ -111,7 +111,7 @@ mod tests {
         assert_eq!(b["model"], "claude-haiku-5-5");
         assert_eq!(b["system"], "Sii breve");
         assert_eq!(b["messages"][0]["role"], "user");
-        assert_eq!(b["messages"][0]["content"], "<trascrizione>ciao</trascrizione>");
+        assert_eq!(b["messages"][0]["content"], "<transcription>ciao</transcription>");
         assert!(b["max_tokens"].as_u64().unwrap() > 0);
         // i modelli piu' recenti rifiutano i parametri di campionamento: non si inviano
         assert!(b.get("temperature").is_none());

@@ -38,7 +38,7 @@ impl Provider {
             Provider::Groq => "Groq",
             Provider::OpenAi => "OpenAI",
             Provider::Anthropic => "Anthropic",
-            Provider::Local => "Locale (Whisper)",
+            Provider::Local => "Local (Whisper)",
         }
     }
 
@@ -202,7 +202,7 @@ pub fn run_chain<T>(
 ) -> Result<(T, Provider), String> {
     let with_key: Vec<Provider> = order.iter().copied().filter(|p| usable(*p)).collect();
     if with_key.is_empty() {
-        return Err("nessun servizio AI pronto (manca la chiave o il modello locale: sezione AI delle Impostazioni)".into());
+        return Err(crate::i18n::t("err.no_provider_ready"));
     }
     let mut candidates: Vec<Provider> = with_key.iter().copied().filter(|p| state.paused(*p, now).is_none()).collect();
     if candidates.is_empty() {
@@ -218,22 +218,22 @@ pub fn run_chain<T>(
                 if secs > 0 {
                     state.pause(p, now + secs, why);
                 }
-                crate::config::log(&format!("{}: {} ({}): provo il servizio successivo", p.name(), e, describe(why)));
+                crate::config::log(&format!("{}: {} ({}): trying the next service", p.name(), e, describe(why)));
                 errors.push(format!("{}: {}", p.name(), e));
             }
         }
     }
-    Err(format!("nessun servizio AI ha risposto ({})", errors.join(" | ")))
+    Err(crate::i18n::tf("err.all_providers_failed", &[("errors", &errors.join(" | "))]))
 }
 
-pub fn describe(f: Failure) -> &'static str {
-    match f {
-        Failure::OutOfCredit => "crediti esauriti",
-        Failure::BadKey => "chiave rifiutata",
-        Failure::RateLimited => "limite di richieste",
-        Failure::Transient => "servizio non raggiungibile",
-        Failure::Other => "errore",
-    }
+pub fn describe(f: Failure) -> String {
+    crate::i18n::t(match f {
+        Failure::OutOfCredit => "failure.out_of_credit",
+        Failure::BadKey => "failure.bad_key",
+        Failure::RateLimited => "failure.rate_limited",
+        Failure::Transient => "failure.unreachable",
+        Failure::Other => "failure.other",
+    })
 }
 
 static STATE: Mutex<State> = Mutex::new(State { paused: Vec::new(), used: Vec::new() });
@@ -339,9 +339,9 @@ impl State {
     /// Stato breve di un servizio per la sua tessera: (pronto, testo).
     pub fn status_at(&self, p: Provider, has_key: bool, now: u64) -> (bool, String) {
         match (has_key, self.paused(p, now)) {
-            (false, _) => (false, if p.is_local() { "Modello non scaricato" } else { "Nessuna chiave" }.to_string()),
-            (true, Some((left, why))) => (false, format!("In pausa: {} ({} min)", describe(why), left.div_ceil(60))),
-            (true, None) => (true, "Pronto".to_string()),
+            (false, _) => (false, crate::i18n::t(if p.is_local() { "status.no_model" } else { "status.no_key" })),
+            (true, Some((left, why))) => (false, crate::i18n::tf("status.paused", &[("why", &describe(why)), ("min", &left.div_ceil(60).to_string())])),
+            (true, None) => (true, crate::i18n::t("status.ready")),
         }
     }
 
@@ -349,9 +349,9 @@ impl State {
     pub fn usage_line(&self, p: Provider) -> String {
         let (calls, tokens) = self.counters(p);
         if p.is_local() {
-            return format!("Dall'avvio: {calls} trascrizioni.");
+            return crate::i18n::tf("usage.local_line", &[("calls", &calls.to_string())]);
         }
-        format!("Dall'avvio: {calls} chiamate, {tokens} token. Il credito residuo non e' leggibile via API.")
+        crate::i18n::tf("usage.line", &[("calls", &calls.to_string()), ("tokens", &tokens.to_string())])
     }
 }
 
@@ -441,7 +441,7 @@ mod tests {
         let (_, used) = run_chain(&order, |p| p == Provider::Anthropic, &mut st, 0, |_| Ok(())).unwrap();
         assert_eq!(used, Provider::Anthropic);
         let r: Result<((), Provider), String> = run_chain(&order, |_| false, &mut st, 0, |_| Ok(()));
-        assert!(r.unwrap_err().contains("nessun servizio AI pronto"));
+        assert!(r.unwrap_err().contains("no AI service ready"));
     }
 
     #[test]
@@ -472,7 +472,7 @@ mod tests {
         assert!(r.contains("OpenAI  (priorita' 1)"));
         assert!(r.contains("Groq  (priorita' 2)"));
         assert!(r.contains("Anthropic  (non in elenco"));
-        assert!(r.contains("IN PAUSA, crediti esauriti (ancora 17 min)"));
+        assert!(r.contains("IN PAUSA, out of credit (ancora 17 min)"));
         assert!(r.contains("1 chiamate, 120 token"));
         assert!(r.contains("nessuna chiave"));
         assert!(r.contains("https://platform.openai.com/settings/organization/billing"));
@@ -554,9 +554,9 @@ mod tests {
     #[test]
     fn local_status_asks_for_the_model() {
         let st = State::default();
-        assert_eq!(st.status_at(Provider::Local, false, 0).1, "Modello non scaricato");
-        assert_eq!(st.status_at(Provider::Local, true, 0), (true, "Pronto".to_string()));
-        assert_eq!(st.usage_line(Provider::Local), "Dall'avvio: 0 trascrizioni.");
+        assert_eq!(st.status_at(Provider::Local, false, 0).1, "Model not downloaded");
+        assert_eq!(st.status_at(Provider::Local, true, 0), (true, "Ready".to_string()));
+        assert_eq!(st.usage_line(Provider::Local), "Since start: 0 transcriptions.");
     }
 
     #[test]
@@ -589,11 +589,11 @@ mod tests {
     #[test]
     fn tile_status_and_usage_line() {
         let mut st = State::default();
-        assert_eq!(st.status_at(Provider::Groq, false, 0), (false, "Nessuna chiave".to_string()));
-        assert_eq!(st.status_at(Provider::Groq, true, 0), (true, "Pronto".to_string()));
+        assert_eq!(st.status_at(Provider::Groq, false, 0), (false, "No key".to_string()));
+        assert_eq!(st.status_at(Provider::Groq, true, 0), (true, "Ready".to_string()));
         st.pause(Provider::Groq, 5000, Failure::OutOfCredit);
-        assert_eq!(st.status_at(Provider::Groq, true, 4000), (false, "In pausa: crediti esauriti (17 min)".to_string()));
+        assert_eq!(st.status_at(Provider::Groq, true, 4000), (false, "Paused: out of credit (17 min)".to_string()));
         st.record(Provider::Groq, 40);
-        assert!(st.usage_line(Provider::Groq).starts_with("Dall'avvio: 1 chiamate, 40 token"));
+        assert!(st.usage_line(Provider::Groq).starts_with("Since start: 1 calls, 40 tokens"));
     }
 }

@@ -2,7 +2,7 @@
 name = "trascrittore"
 version = "0.1.0"
 edition = "2021"
-description = "Dettatura vocale per Windows e Linux: microfono -> Groq Whisper -> Groq LLM -> incolla nel cursore"
+description = "Voice dictation for Windows and Linux: microphone -> Whisper -> AI -> paste at the cursor"
 license-file = "LICENSE"
 
 [profile.release]
@@ -33,9 +33,10 @@ slint = { version = "1.18.1", default-features = false, features = ["std", "back
 [build-dependencies]
 embed-resource = "3"
 slint-build = "1.18.1"
+toml = "1.1.8"
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_HiDpi", "Win32_Media_Audio"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_HiDpi", "Win32_Media_Audio", "Win32_Globalization"] }
 winreg = "0.56.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -51,7 +52,7 @@ name = "trascrittore"
 maintainer = "aleDiPi <noreply@users.noreply.github.com>"
 section = "sound"
 priority = "optional"
-extended-description = "Tieni premuta una scorciatoia, parla, rilascia: il testo viene trascritto, corretto da un servizio AI con un prompt adatto all'app in primo piano e incollato dove hai il cursore. Sta nell'area di notifica e usa poche risorse."
+extended-description = "Hold a hotkey, speak, release: the text is transcribed, corrected by an AI service with a prompt suited to the foreground app, and pasted where your cursor is. It lives in the notification area and uses few resources."
 # librerie caricate a runtime (dlopen) che dpkg-shlibdeps non vede
 depends = "$auto, libayatana-appindicator3-1 | libappindicator3-1, libxdo3, libxkbcommon-x11-0, libxcursor1, libxrandr2, libxi6, libfontconfig1, pulseaudio-utils | pipewire-bin | alsa-utils, policykit-1 | polkitd"
 recommends = "libnotify-bin, libasound2-plugins"

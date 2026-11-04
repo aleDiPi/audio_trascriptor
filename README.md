@@ -1,94 +1,98 @@
 # Trascrittore audio
 
-Dettatura vocale per **Windows** e **Linux** (Linux Mint, Ubuntu), scritta in Rust (nessun runtime da installare).
+**English** · [Italiano](README.it.md)
 
-**Come funziona:** tieni premuta la scorciatoia (default `Ctrl+Win`), parla, rilascia. L'audio del microfono predefinito di Windows viene trascritto da Groq Whisper, rifinito da un LLM Groq con un prompt che dipende dall'app in primo piano (Outlook, Slack, VS Code, Word...) e il risultato viene incollato dove hai il cursore.
+Voice dictation for **Windows** and **Linux** (Linux Mint, Ubuntu), written in Rust (no runtime to install).
 
-(Su Linux: microfono predefinito del sistema, vedi la sezione *Linux* piu' sotto.)
+**How it works:** hold the hotkey (default `Ctrl+Win`), speak, release. The audio from the system default microphone is transcribed by Groq Whisper, polished by a Groq LLM with a prompt that depends on the foreground app (Outlook, Slack, VS Code, Word...), and the result is pasted where your cursor is.
 
-Parte ridotto a icona nella tray (nessuna finestra), usa pochissima RAM/CPU quando e' inattivo. Icona blu = pronto, rossa = registra, arancione = elabora, grigia = errore (passa il mouse per il dettaglio).
+It starts minimized in the tray (no window) and uses very little RAM/CPU when idle. Blue icon = ready, red = recording, orange = processing, grey = error (hover for details).
 
-## Struttura della cartella
+**Languages:** the interface is available in English and Italian. The language follows the system language; you can change it in the installer (Windows) and at any time in *Settings > Language* (this is also how you change it on Linux, where there is no installer). Anyone can add a language by adding one text file: see [CONTRIBUTING.md](CONTRIBUTING.md) and the `lang/` folder.
 
-| Tipo | File | Su GitHub |
+## Folder layout
+
+| Kind | Files | On GitHub |
 |---|---|---|
-| Programma | `src/`, `ui/`, `Cargo.toml`, `config/config.example.toml`, `installer/` (Windows e Linux), `.github/workflows/` | si |
-| Sicurezza | `.env.example`, `.gitignore`, `SECURITY.md` (e in locale `.env`, `config.toml`) | solo i modelli; `.env` e `config.toml` mai |
-| Secondari | `target/`, `*.log`, `recordings/`, `local/`, `notes/`, `tmp/` | no (ignorati) |
+| Program | `src/`, `ui/`, `lang/`, `Cargo.toml`, `config/config.example.toml`, `installer/` (Windows and Linux), `.github/workflows/` | yes |
+| Security | `.env.example`, `.gitignore`, `SECURITY.md` (and locally `.env`, `config.toml`) | only the templates; `.env` and `config.toml` never |
+| Secondary | `target/`, `*.log`, `recordings/`, `local/`, `notes/`, `tmp/` | no (ignored) |
 
-## Installer (consigliato)
+## Installer (recommended)
 
-**Download diretto (senza clonare il repository):** [Trascrittore-Setup.exe](https://github.com/aleDiPi/audio_trascriptor/releases/latest/download/Trascrittore-Setup.exe) (il repository e' privato: serve essere collegati a GitHub con il proprio account). Ogni merge su `main` pubblica una nuova release con la sua versione (vedi *Versioni*), e il link porta sempre all'ultima.
+**Direct download (no need to clone the repository):** [Trascrittore-Setup.exe](https://github.com/aleDiPi/audio_trascriptor/releases/latest/download/Trascrittore-Setup.exe) (if the repository is private you must be signed in to GitHub with an account that has access). Every merge to `main` publishes a new release with its own version (see *Versions*), and the link always points to the latest.
 
-La GitHub Action produce `Trascrittore-Setup.exe` (artifact `trascrittore-setup`, nella pagina dell'esecuzione in *Actions*). L'installer:
+The GitHub Action produces `Trascrittore-Setup.exe` (artifact `trascrittore-setup`, on the run page in *Actions*). The installer:
 
-- installa il programma per tutto il PC in `C:\Program Files\Trascrittore` (chiede i permessi di amministratore; build a 64 bit, vedi sotto) e crea la voce nel menu Start. Configurazione, chiavi e log stanno in `C:\ProgramData\Trascrittore`, scrivibile dagli utenti del PC;
-- non chiede la chiave Groq (si inserisce dalle impostazioni, clic sull'icona nella tray); chiede invece, facoltativo, il token GitHub per gli aggiornamenti automatici (la pagina contiene i passaggi per crearlo e il link diretto a GitHub). Se un token e' gia' salvato in `.env` (anche nella vecchia cartella per-utente) e GitHub lo accetta, o non si riesce a verificarlo, la pagina viene saltata e il token resta com'e'; la pagina compare solo se GitHub lo rifiuta. Per sostituirlo: Impostazioni > Info. Le altre chiavi (Groq, OpenAI, Anthropic) non vengono mai toccate dall'installer;
-- crea `config.toml` e `.env` nella stessa cartella se mancano (non li sovrascrive negli aggiornamenti); se arrivi dalla vecchia installazione per-utente, li copia da `%APPDATA%\Trascrittore`; se il programma era in `C:\ProgramData\Trascrittore` lo sposta in Program Files;
-- offre l'avvio automatico con Windows;
-- **la disinstallazione cancella tutto**: programma, `C:\ProgramData\Trascrittore` (config, chiavi in `.env`, log), le vecchie cartelle `%APPDATA%\Trascrittore` e `%LOCALAPPDATA%\Programs\Trascrittore`, i download temporanei degli aggiornamenti e la voce di avvio automatico dell'utente che disinstalla (non si tocca nulla negli altri profili utente);
-- scegliendo il tipo **Programma + strumenti di sviluppo** installa anche Rust e Visual Studio Build Tools con lo stesso script di `scripts\setup-windows.ps1`. Servono solo per compilare dal sorgente, non per usare il programma.
+- starts in the **language of Windows** and lets you pick another language in its first dialog; the whole wizard switches at once, and the choice becomes the language of the program (changeable later in Settings);
+- installs the program for the whole PC in `C:\Program Files\Trascrittore` (asks for administrator rights; 64-bit build, see below) and creates the Start menu entry. Configuration, keys and logs live in `C:\ProgramData\Trascrittore`, writable by the users of the PC;
+- does not ask for the Groq key (enter it in Settings, click the tray icon); it does ask, optionally, for the GitHub token for automatic updates (the page contains the steps to create it and a direct link to GitHub). If a token is already saved in `.env` (also in the old per-user folder) and GitHub accepts it, or it cannot be verified, the page is skipped and the token stays as it is; the page appears only if GitHub rejects it. To replace it: Settings > Info. The other keys (Groq, OpenAI, Anthropic) are never touched by the installer;
+- creates `config.toml` and `.env` in the same folder if missing (it does not overwrite them on updates); if you come from the old per-user installation, it copies them from `%APPDATA%\Trascrittore`; if the program was in `C:\ProgramData\Trascrittore` it moves it to Program Files;
+- offers to start with Windows;
+- **uninstalling deletes everything**: the program, `C:\ProgramData\Trascrittore` (config, keys in `.env`, logs), the old `%APPDATA%\Trascrittore` and `%LOCALAPPDATA%\Programs\Trascrittore` folders, the temporary update downloads and the autostart entry of the user who uninstalls (nothing is touched in other user profiles);
+- choosing the **Program + development tools** type also installs Rust and Visual Studio Build Tools with the same script as `scripts\setup-windows.ps1`. They are only needed to build from source, not to use the program.
 
-Per generarlo a mano: `cargo build --release`, poi `ISCC.exe /DAppVersion=2026.10.25.1 installer\trascrittore.iss` (richiede [Inno Setup 6](https://jrsoftware.org/isinfo.php)).
+To build it by hand: `cargo build --release`, then `ISCC.exe /DAppVersion=2026.10.25.1 installer\trascrittore.iss` (requires [Inno Setup 6](https://jrsoftware.org/isinfo.php)).
 
-## Compilare ed eseguire su Windows dal sorgente
+## Build and run on Windows from source
 
-1. Installa Visual Studio Build Tools (strumenti C++) e Rust con un solo comando (PowerShell, usa winget e salta cio' che hai gia'; Windows chiedera' conferma UAC):
+1. Install Visual Studio Build Tools (C++ tools) and Rust with one command (PowerShell, uses winget and skips what you already have; Windows will ask for UAC confirmation):
    ```powershell
    powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
    ```
-   Poi chiudi e riapri il terminale.
-2. Nella cartella del progetto:
+   Then close and reopen the terminal.
+2. In the project folder:
    ```powershell
    git pull
    copy .env.example .env
    copy config\config.example.toml config.toml
    ```
-3. Apri `.env` e scrivi la tua chiave: `GROQ_API_KEY=gsk_...` ([crea una chiave gratuita](https://console.groq.com/keys)).
-4. `cargo run --release` (oppure `cargo build --release` e avvia `target\release\trascrittore.exe`).
+3. Open `.env` and write your key: `GROQ_API_KEY=gsk_...` ([create a free key](https://console.groq.com/keys)).
+4. `cargo run --release` (or `cargo build --release` and start `target\release\trascrittore.exe`).
 
-In alternativa scarica l'exe gia' compilato dagli artifact della GitHub Action "Build".
+Alternatively download the already built exe from the artifacts of the "Build" GitHub Action.
 
-Il programma cerca `config.toml` nella cartella corrente, accanto all'exe, in `%ProgramData%\Trascrittore\` e infine in `%APPDATA%\Trascrittore\`; se non lo trova usa quest'ultima (creandolo con i valori predefiniti). Menu tray (tasto destro): **Avvia con Windows**, **Apri cartella configurazione**, **Ricarica configurazione**, **Esci**.
+The program looks for `config.toml` in the current folder, next to the exe, in `%ProgramData%\Trascrittore\` and finally in `%APPDATA%\Trascrittore\`; if it finds none it uses the latter (creating it with the default values). Tray menu (right click): **Start with Windows**, **Open configuration folder**, **Reload configuration**, **Quit**.
 
-## Modalita' debug e log
+## Debug mode and logs
 
-Quando disattivi la modalita' debug, i file di log gia' presenti (`trascrittore.log` e `trascrittore.log.1`) vengono cancellati.
+When you turn debug mode off, the existing log files (`trascrittore.log` and `trascrittore.log.1`) are deleted.
 
-Nei primi test attiva la **modalita' debug**: dal menu dell'icona nella tray (*Modalita' debug*), dalla finestra Impostazioni oppure con `debug = true` in `config.toml`. Il log (*Apri log* nel menu o nelle Impostazioni) si trova accanto a `config.toml` (con l'installer `C:\ProgramData\Trascrittore\trascrittore.log`; la finestra Impostazioni ne mostra il percorso) e contiene data e ora UTC, e per ogni dettatura:
+In your first tests turn **debug mode** on: from the tray icon menu (*Debug mode*), from the Settings window, or with `debug = true` in `config.toml`. The log (*Open log* in the menu or in Settings) is next to `config.toml` (with the installer `C:\ProgramData\Trascrittore\trascrittore.log`; the Settings window shows its path) and contains the UTC date and time and, for every dictation:
 
-- hotkey premuta/rilasciata e app in primo piano (nome del programma e titolo della finestra);
-- microfono usato, frequenza, durata registrata e livello del segnale (utile se il microfono predefinito di Windows e' sbagliato o muto);
-- ogni chiamata a Groq: modello, esito HTTP, tempo in millisecondi, token usati; i modelli candidati e il passaggio a quelli di riserva;
-- la regola per app scelta, quanti caratteri vengono incollati, con quale scorciatoia e se viene premuto Invio;
-- i controlli di aggiornamento.
+- hotkey pressed/released and foreground app (program name and window title);
+- microphone used, sample rate, recorded duration and signal level (useful if the Windows default microphone is wrong or muted);
+- every call to Groq: model, HTTP result, time in milliseconds, tokens used; the candidate models and the switch to the fallback ones;
+- the per-app rule chosen, how many characters are pasted, with which shortcut and whether Enter is pressed;
+- update checks.
 
-Senza debug il log contiene solo avvio, errori e avvisi. **Non** scrive mai chiavi API o token. Il testo dettato compare nel log solo se aggiungi anche `debug_log_text = true` (e' privato: attivalo solo per cercare un problema).
+Without debug the log contains only startup, errors and warnings. It **never** writes API keys or tokens. The dictated text appears in the log only if you also add `debug_log_text = true` (it is private: turn it on only to look for a problem).
 
 ## Linux (Linux Mint 22, Ubuntu 24.04)
 
-Il pacchetto `trascrittore.deb` e' nella stessa release di GitHub dell'installer Windows (stesso numero di versione). Il pacchetto e' compilato su Ubuntu 24.04, quindi serve **Linux Mint 22** o piu' recente (le versioni 21 e precedenti hanno una libreria di sistema troppo vecchia).
+The `trascrittore.deb` package is in the same GitHub release as the Windows installer (same version number). The package is built on Ubuntu 24.04, so you need **Linux Mint 22** or newer (version 21 and older have a system library that is too old).
 
-**Installazione:** scarica `trascrittore.deb` dalla pagina Release (il repository e' privato: serve essere collegati a GitHub) e installalo con doppio clic (Gestore software) oppure:
+**Installation:** download `trascrittore.deb` from the Releases page (if the repository is private you must be signed in to GitHub) and install it with a double click (Software Manager) or:
 
 ```bash
 sudo apt install ./trascrittore.deb
 ```
 
-apt aggiunge da solo le librerie che servono. Si disinstalla con `sudo apt remove trascrittore` (la cartella di configurazione dell'utente resta: `rm -r ~/.config/trascrittore` per cancellare anche quella).
+apt adds the libraries that are needed. Uninstall with `sudo apt remove trascrittore` (the user's configuration folder stays: `rm -r ~/.config/trascrittore` to delete that too).
 
-**Cosa cambia rispetto a Windows**
+**What is different from Windows**
 
-- Serve una sessione grafica **X11** (e' quella predefinita di Linux Mint Cinnamon). Con Wayland la scorciatoia globale non funziona, e il programma lo scrive nel log.
-- Scorciatoia: `Ctrl+Win` (tasto Super) come su Windows. Su Linux i tasti non vengono "mangiati": conviene una combinazione di soli modificatori oppure un tasto che non scrive nulla (`f9`, ...), altrimenti il tasto arriva anche all'applicazione. Se `Ctrl+Super` interferisce con un'altra scorciatoia di Cinnamon, cambia `hotkey` in `config.toml` e scegli *Ricarica configurazione* dal menu dell'icona.
-- Il programma parte all'accesso, ridotto nell'area di notifica (voce in `/etc/xdg/autostart`). Si spegne dal menu dell'icona (*Avvia all'accesso*) o dalle Impostazioni; la scelta dell'utente sta in `~/.config/autostart/trascrittore.desktop`. Se lo avvii dal menu delle applicazioni mentre e' gia' in esecuzione, si apre la finestra delle Impostazioni.
-- Configurazione, chiavi (`.env`, leggibile solo da te) e log stanno in `~/.config/trascrittore/`.
-- Le regole per applicazione usano il nome del programma in primo piano (`thunderbird`, `code`, `firefox`...); il suffisso `.exe` e le maiuscole non contano, quindi `chrome.exe` vale anche `chrome`. Per i terminali (gnome-terminal, xfce4-terminal, konsole...) incolla con `Ctrl+Maiusc+V` (`paste = "ctrl+shift+v"`).
-- Su Linux non c'e' il bollino a schermo durante la registrazione: restano i suoni e il colore dell'icona.
-- Gli appunti sono gestiti da X11; i tasti vengono simulati con l'estensione XTest. Per i suoni serve `paplay`, `pw-play` o `aplay` (presenti in Mint); per la notifica di aggiornamento `notify-send` (`libnotify-bin`).
-- **Aggiornamenti:** con il token GitHub (Impostazioni > Info, come su Windows) il programma controlla le nuove versioni ogni 6 ore e mostra una notifica; **Impostazioni > Info > Aggiorna ora** scarica il `.deb` della release, ne verifica lo SHA-256 e lo installa con `apt` (compare la richiesta della password, `pkexec`), poi si riavvia. Senza token si aggiorna a mano reinstallando il nuovo `.deb`.
+- There is no installer, so the language is set inside the program: *Settings > Language* (the default follows the system language, read from `LC_ALL`, `LC_MESSAGES`, `LANGUAGE` or `LANG`). Or set `ui_language = "it"` in `config.toml`.
+- An **X11** graphical session is needed (it is the default on Linux Mint Cinnamon). With Wayland the global hotkey does not work, and the program says so in the log.
+- Hotkey: `Ctrl+Win` (Super key) as on Windows. On Linux the keys are not "swallowed": a combination of modifiers only, or a key that writes nothing (`f9`, ...), works best, otherwise the key also reaches the application. If `Ctrl+Super` clashes with another Cinnamon shortcut, change `hotkey` in `config.toml` and choose *Reload configuration* from the icon menu.
+- The program starts at login, minimized in the notification area (entry in `/etc/xdg/autostart`). Turn it off from the icon menu (*Start at login*) or from Settings; the user's choice lives in `~/.config/autostart/trascrittore.desktop`. If you start it from the applications menu while it is already running, the Settings window opens.
+- Configuration, keys (`.env`, readable only by you) and logs live in `~/.config/trascrittore/`.
+- The per-app rules use the name of the foreground program (`thunderbird`, `code`, `firefox`...); the `.exe` suffix and capitals do not matter, so `chrome.exe` also matches `chrome`. For terminals (gnome-terminal, xfce4-terminal, konsole...) paste with `Ctrl+Shift+V` (`paste = "ctrl+shift+v"`).
+- On Linux there is no on-screen badge while recording: the sounds and the icon colour remain.
+- The clipboard is handled by X11; keys are simulated with the XTest extension. Sounds need `paplay`, `pw-play` or `aplay` (present in Mint); the update notification needs `notify-send` (`libnotify-bin`).
+- **Updates:** with the GitHub token (Settings > Info, as on Windows) the program checks for new versions every 6 hours and shows a notification; **Settings > Info > Update now** downloads the `.deb` of the release, verifies its SHA-256 and installs it with `apt` (a password prompt appears, `pkexec`), then restarts. Without a token, update by hand by reinstalling the new `.deb`.
 
-**Compilare dal sorgente (Linux):**
+**Build from source (Linux):**
 
 ```bash
 sudo apt install build-essential cmake clang pkg-config libasound2-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev libfontconfig1-dev libxkbcommon-dev
@@ -96,112 +100,119 @@ cargo build --release          # target/release/trascrittore
 cargo install cargo-deb --locked && cargo deb --no-build   # target/debian/*.deb
 ```
 
-I test (`cargo test`) girano senza server grafico; i due test che usano un vero server X11 (`paste_smoke`, `foreground_smoke`) sono `#[ignore]` e si lanciano a mano, per esempio con Xvfb.
+The tests (`cargo test`) run without a graphical server; the two tests that use a real X11 server (`paste_smoke`, `foreground_smoke`) are `#[ignore]` and are run by hand, for example with Xvfb.
 
-## Versioni
+## Versions
 
-Ogni versione ha un numero **AAAA.MM.GG.N**: la data della build (ora italiana) e un numero progressivo del giorno (2026.10.25.1, 2026.10.25.2, ...). La GitHub Action lo calcola a ogni merge su `main`, lo scrive nell'eseguibile e nell'installer e pubblica una release con il tag `vAAAA.MM.GG.N`; la piu' recente e' quella segnalata come *Latest*. La versione si legge in *Home* e in *Impostazioni*, sezione *Info* (una build locale mostra "locale"). Resta anche una release fissa `latest` che serve solo alle installazioni precedenti al sistema di versioni: dopo che tutti i PC si sono aggiornati si puo' cancellare.
+Every version has a number **YYYY.MM.DD.N**: the build date (Italian time) and a progressive number of the day (2026.10.25.1, 2026.10.25.2, ...). The GitHub Action computes it at every merge to `main`, writes it into the executable and the installer and publishes a release with the tag `vYYYY.MM.DD.N`; the most recent one is marked *Latest*. The version can be read in *Home* and in *Settings*, *Info* section (a local build shows "local"). A fixed `latest` release also remains, used only by installations that predate the version system: it can be deleted once all PCs have updated.
 
-## Architettura (x64, ARM64)
+## Architecture (x64, ARM64)
 
-Il programma e l'installer sono compilati per **x64** (`x86_64-pc-windows-msvc`, il target predefinito di `windows-latest` nella GitHub Action) e si installano in modalita' 64 bit. Su Windows 11 per ARM64 l'installer parte e il programma gira tramite l'emulazione x64 di Windows, ma non c'e' una build ARM64 nativa e non e' stato provato. Windows a 32 bit non e' supportato.
+The program and the installer are built for **x64** (`x86_64-pc-windows-msvc`, the default target of `windows-latest` in the GitHub Action) and install in 64-bit mode. On Windows 11 for ARM64 the installer starts and the program runs through the x64 emulation of Windows, but there is no native ARM64 build and it has not been tried. 32-bit Windows is not supported.
 
-## Aggiornamenti automatici (facoltativi)
+## Automatic updates (optional)
 
-Il repository e' privato, quindi per aggiornarsi da solo il programma ha bisogno di un token GitHub di **sola lettura**:
+If the repository is private, to update itself the program needs a **read-only** GitHub token:
 
-1. Apri direttamente <https://github.com/settings/personal-access-tokens/new> (*Settings*, *Developer settings*, *Personal access tokens*, *Fine-grained tokens*, *Generate new token*).
-2. *Repository access*: **Only select repositories**, solo `aleDiPi/audio_trascriptor`.
-3. *Permissions*, *Repository permissions*: **Contents: Read-only** (nient'altro). Scegli una scadenza (es. 1 anno) e crea il token.
-4. Incolla il token nell'installer (pagina "Aggiornamenti automatici": lo verifica subito con GitHub e, se non funziona, ti dice perche' e ti lascia correggerlo o proseguire senza) oppure in Impostazioni > Info, *Verifica e salva*. Sempre da Info puoi cambiarlo, rimuoverlo (*Rimuovi token*) e attivare o disattivare gli aggiornamenti con la casella *Aggiornamenti automatici attivi* (`auto_update` in `config.toml`). Viene salvato solo sul tuo PC, in `.env` accanto al programma (`TRASCRITTORE_UPDATE_TOKEN`); non e' mai dentro l'eseguibile ne' nel repository.
+1. Open <https://github.com/settings/personal-access-tokens/new> directly (*Settings*, *Developer settings*, *Personal access tokens*, *Fine-grained tokens*, *Generate new token*).
+2. *Repository access*: **Only select repositories**, only `aleDiPi/audio_trascriptor`.
+3. *Permissions*, *Repository permissions*: **Contents: Read-only** (nothing else). Choose an expiry (e.g. 1 year) and create the token.
+4. Paste the token in the installer ("Automatic updates" page: it checks it with GitHub right away and, if it does not work, tells you why and lets you fix it or continue without) or in Settings > Info, *Verify and save*. Also from Info you can change it, remove it (*Remove token*) and turn updates on or off with the *Automatic updates on* box (`auto_update` in `config.toml`). It is saved only on your PC, in `.env` next to the program (`TRASCRITTORE_UPDATE_TOKEN`); it is never inside the executable or the repository.
 
-Come funziona: 20 secondi dopo l'avvio, e poi ogni 6 ore, il programma legge l'ultima release. Se la sua versione e' piu' recente di quella installata (si confrontano i numeri: 2026.10.25.10 viene dopo 2026.10.25.9), scarica **solo `trascrittore.exe`** (pochi MB), controlla lo SHA-256 dichiarato da GitHub, rinomina l'eseguibile in uso, mette il nuovo al suo posto e si riavvia (succede solo se la cartella del programma e' scrivibile, per esempio in una build locale). Con l'installer in Program Files il programma non puo' sostituirsi da solo senza amministratore: scarica `Trascrittore-Setup.exe` e lo avvia in modalita' silenziosa, e Windows mostra **una richiesta di amministratore (UAC) a ogni aggiornamento**; se la rifiuti non cambia nulla e riprova al controllo successivo. L'installer completo viene usato anche quando un aggiornamento e' marcato `[installer]` nel titolo della PR (modifiche strutturali). Durante una dettatura l'aggiornamento aspetta. Sicurezza: l'exe in Program Files non e' modificabile senza amministratore, ma gli utenti del PC possono leggere e modificare `.env` in `C:\ProgramData\Trascrittore` (chiavi comprese): l'installazione e' pensata per un PC personale. Se il controllo fallisce, il messaggio dice la causa: token rifiutato (errato o scaduto), token che non vede il repository (controlla *Resource owner* aleDiPi, *Repository access* e *Contents: Read-only*; per GitHub un repository privato non visibile risponde 404), oppure nessuna release ancora pubblicata (dopo ogni merge ci vuole un paio di minuti). Dalle Impostazioni, sezione *Info*, i pulsanti **Verifica aggiornamenti** e **Aggiorna ora** controllano e installano subito, anche con gli aggiornamenti automatici spenti. Senza token gli aggiornamenti sono manuali: scarica `Trascrittore-Setup.exe` dalla pagina Release. Le build locali (`cargo build`) non si aggiornano mai.
+How it works: 20 seconds after startup, and then every 6 hours, the program reads the latest release. If its version is newer than the installed one (the numbers are compared: 2026.10.25.10 comes after 2026.10.25.9), it downloads **only `trascrittore.exe`** (a few MB), checks the SHA-256 declared by GitHub, renames the running executable, puts the new one in its place and restarts (this only happens if the program folder is writable, for example in a local build). With the installer in Program Files the program cannot replace itself without administrator rights: it downloads `Trascrittore-Setup.exe` and starts it in silent mode, and Windows shows **an administrator (UAC) prompt at every update**; if you refuse nothing changes and it tries again at the next check. The full installer is also used when an update is marked `[installer]` in the PR title (structural changes). During a dictation the update waits. Security: the exe in Program Files cannot be modified without administrator rights, but the users of the PC can read and modify `.env` in `C:\ProgramData\Trascrittore` (keys included): the installation is meant for a personal PC. If the check fails, the message states the cause: token rejected (wrong or expired), token that does not see the repository (check *Resource owner* aleDiPi, *Repository access* and *Contents: Read-only*; for GitHub an invisible private repository answers 404), or no release published yet (after every merge it takes a couple of minutes). In Settings, *Info* section, the buttons **Check for updates** and **Update now** check and install right away, even with automatic updates off. Without a token updates are manual: download `Trascrittore-Setup.exe` from the Releases page. Local builds (`cargo build`) never update.
 
-## Impostazioni (clic sull'icona nella tray)
+## Settings (click the tray icon)
 
-Un clic sinistro sull'icona (o *Impostazioni...* nel menu con il tasto destro) apre una finestra (interfaccia [Slint](https://slint.dev) con renderer software, nitida a qualsiasi scala di Windows) che esiste solo finche' e' aperta. Le sezioni sono nella barra a sinistra:
+A left click on the icon (or *Settings...* in the right-click menu) opens a window ([Slint](https://slint.dev) interface with the software renderer, sharp at any Windows scale) that exists only while it is open. The sections are in the left bar:
 
-1. **Home**: riepilogo all'apertura: modello AI e di trascrizione che risponderanno ora, servizi in ordine di priorita' e se hanno la chiave, scorciatoia, versione e aggiornamenti, utilizzo dall'avvio.
-2. **AI**: una tessera per servizio (Groq, OpenAI, Anthropic e, ultima, la trascrizione locale con Whisper). Ogni tessera mostra stato (pronto, in pausa e perche', nessuna chiave), chiave (**Verifica e salva**, **Rimuovi**, **Crea chiave**; si vedono solo le ultime 4 cifre; salvata in `.env`), modelli, contatori dall'avvio e il link alla pagina del credito (nessuno dei tre lo espone via API). **Trascina** le tessere con la maniglia a sinistra per cambiare la priorita' (`providers` in `config.toml`); la casella *Usa* esclude un servizio. Se un servizio finisce i crediti o rifiuta la chiave si passa al successivo; per Groq anche ai modelli di riserva (`fallback_models`, `stt_fallback_models`) con i limiti letti dagli header.
-3. **Prompt**: i prompt completi inviati all'AI, scelti da un elenco per tipo di applicazione (app non riconosciuta e ogni regola `[[apps]]`, con il nome dato da `name`).
-4. **Impostazioni**: icona con alone (`overlay`), **suoni** di inizio e fine registrazione (attivi/spenti, tipo *Morbido*, *Click* o *Campanello*, volume, pulsante *Prova*; `sounds`, `sound_style`, `sound_volume` in `config.toml`) e apertura della cartella di configurazione.
-5. **Info**: versione, aggiornamenti automatici (**Verifica aggiornamenti**, **Aggiorna ora**), token GitHub (**Verifica e salva**, **Rimuovi token**, **Crea token**), modalita' debug, testo dettato nel log (`debug_log_text`), apertura del log, percorsi e descrizione del programma.
+1. **Home**: summary on opening: the AI and transcription model that will answer now, services in priority order and whether they have a key, hotkey, version and updates, usage since start.
+2. **AI**: one tile per service (Groq, OpenAI, Anthropic and, last, local transcription with Whisper). Each tile shows the status (ready, paused and why, no key), key (**Verify and save**, **Remove**, **Create key**; only the last 4 characters are shown; saved in `.env`), models, counters since start and the link to the credit page (none of the three exposes it via API). **Drag** the tiles by the handle on the left to change the priority (`providers` in `config.toml`); the *Use* box excludes a service. If a service runs out of credit or rejects the key, the next one is used; for Groq also the fallback models (`fallback_models`, `stt_fallback_models`) with limits read from the headers.
+3. **Prompt**: the complete prompts sent to the AI, chosen from a list by type of application (unrecognized app and every `[[apps]]` rule, with the name given by `name`).
+4. **Settings**: icon with halo (`overlay`), start/end **sounds** (on/off, type *Soft*, *Click* or *Chime*, volume, *Try* button; `sounds`, `sound_style`, `sound_volume` in `config.toml`), the **Language** of the interface and opening the configuration folder.
+5. **Info**: version, automatic updates (**Check for updates**, **Update now**), GitHub token (**Verify and save**, **Remove token**, **Create token**), debug mode, dictated text in the log (`debug_log_text`), opening the log, paths and a description of the program.
 
-L'exe ha un manifest con DPI per monitor (`assets/app.manifest`): senza, Windows ingrandisce le finestre come immagini e il testo risulta sfocato. L'icona con alone resta non scalata dal sistema, come prima.
+The exe has a per-monitor DPI manifest (`assets/app.manifest`): without it Windows enlarges windows as images and the text looks blurry. The halo icon stays unscaled by the system, as before.
 
-I testi sono selezionabili e copiabili.
+Texts are selectable and copyable.
 
-## Trascrizione locale (Whisper)
+## Local transcription (Whisper)
 
-Come **ultima risorsa**, quando nessun servizio in rete risponde (crediti finiti, chiave rifiutata, niente rete), l'audio viene trascritto sul tuo PC con Whisper ([whisper.cpp](https://github.com/ggml-org/whisper.cpp)). E' la quarta tessera della sezione **AI** (`local` in `providers`, ultima per impostazione predefinita, trascinabile e escludibile con *Usa*). Chi aveva gia' un `config.toml` la trova aggiunta in coda una sola volta (`local_migrated = true`); se la togli non viene rimessa.
+As a **last resort**, when no network service answers (credit finished, key rejected, no network), the audio is transcribed on your PC with Whisper ([whisper.cpp](https://github.com/ggml-org/whisper.cpp)). It is the fourth tile of the **AI** section (`local` in `providers`, last by default, draggable and excludable with *Use*). Whoever already had a `config.toml` finds it added at the end once (`local_migrated = true`); if you remove it, it is not put back.
 
-- Il modello **non e' nell'installer**: si sceglie la dimensione (`local_model`: `tiny` ~75 MB, `base` ~142 MB consigliato, `small` ~466 MB, `medium` ~1,5 GB; modelli multilingua, adatti all'italiano) e si scarica col pulsante **Scarica** (con avanzamento e **Annulla**) da Hugging Face in `models\` accanto a `config.toml`. Il file scaricato e' controllato con il numero magico e, quando Hugging Face lo dichiara, con lo SHA-256. **Elimina** lo cancella; la disinstallazione rimuove tutta la cartella dati, modelli compresi.
-- Il modello viene caricato solo durante la trascrizione e liberato subito dopo: a riposo non occupa RAM. Su CPU e' piu' lento del cloud (qualche secondo per una frase con `base`, di piu' con `small` e `medium`).
-- Whisper locale **trascrive soltanto**: se anche l'AI di correzione e' fuori uso, il testo non viene corretto e viene incollata la trascrizione grezza. Se invece un servizio in rete funziona ancora per la correzione, il testo viene corretto come sempre.
-- Nessun dato esce dal PC mentre usa il locale. Non serve credito ne' chiave.
-- La build compila whisper.cpp (serve CMake e libclang; sul runner di GitHub ci sono gia', vedi `LIBCLANG_PATH` in `.github/workflows/build.yml`). L'exe cresce di qualche MB.
+- The model is **not in the installer**: choose the size (`local_model`: `tiny` ~75 MB, `base` ~142 MB recommended, `small` ~466 MB, `medium` ~1.5 GB; multilingual models) and download it with the **Download** button (with progress and **Cancel**) from Hugging Face into `models\` next to `config.toml`. The downloaded file is checked with the magic number and, when Hugging Face declares it, with the SHA-256. **Delete** removes it; uninstalling removes the whole data folder, models included.
+- The model is loaded only during transcription and freed right after: at rest it takes no RAM. On CPU it is slower than the cloud (a few seconds for a sentence with `base`, more with `small` and `medium`).
+- Local Whisper **only transcribes**: if the correction AI is also down, the text is not corrected and the raw transcription is pasted. If instead a network service still works for correction, the text is corrected as usual.
+- No data leaves the PC while the local service is used. No credit or key is needed.
+- The build compiles whisper.cpp (needs CMake and libclang; on the GitHub runner they are already there, see `LIBCLANG_PATH` in `.github/workflows/build.yml`). The exe grows by a few MB.
 
-## Suoni
+## Sounds
 
-Un suono breve (meno di 0,25 s) segnala l'inizio e un altro la fine della registrazione. Sono toni sintetizzati in memoria (nessun file) e suonati da Windows in modo asincrono. Non finiscono nella registrazione: all'inizio il programma scarta i primi istanti dell'audio (durata del suono piu' un margine), alla fine il microfono e' gia' chiuso quando il suono parte. Quindi comincia a parlare dopo il suono. Si regolano in Impostazioni o con `sounds`, `sound_style` (`soft`, `click`, `chime`) e `sound_volume` (0-100) in `config.toml`.
+A short sound (less than 0.25 s) marks the start and another the end of the recording. They are tones synthesized in memory (no file) and played asynchronously. They do not end up in the recording: at the start the program discards the first instants of the audio (sound duration plus a margin), at the end the microphone is already closed when the sound starts. So start talking after the sound. Adjust them in Settings or with `sounds`, `sound_style` (`soft`, `click`, `chime`) and `sound_volume` (0-100) in `config.toml`.
 
-## Configurazione (`config.toml`)
+## Configuration (`config.toml`)
 
-- `hotkey`: scorciatoia, es. `"ctrl+win"`, `"ctrl+alt+space"`, `"f9"`.
-- `mode`: `"hold"` (tieni premuto) o `"toggle"` (premi per iniziare/finire).
-- `language`, `stt_model`, `llm_model`, `fallback_models`, `stt_fallback_models`, `max_seconds`, `restore_clipboard`.
-- `default_prompt`: prompt di base sempre applicato (pulizia del testo dettato). Il `prompt` della regola dell'app viene aggiunto a questo.
-- `dictionary`: parole/nomi da scrivere esattamente cosi'.
-- `[[apps]]`: regole per app, con `exe` (nomi dei processi), `prompt`, `raw = true` per incollare la trascrizione senza AI, `send_enter = true` per premere Invio dopo l'incolla (es. Claude desktop, al posto dello script AutoHotkey `claude-auto-invio.ahk`), `paste = "shift+insert"` per i terminali che lo richiedono, `title_contains` per distinguere ad es. un sito nel browser.
+- `hotkey`: shortcut, e.g. `"ctrl+win"`, `"ctrl+alt+space"`, `"f9"`.
+- `mode`: `"hold"` (hold down) or `"toggle"` (press to start/finish).
+- `language`: language of the speech you dictate (ISO-639-1 code such as `"en"`, `"it"`; empty = automatic detection).
+- `ui_language`: language of the menus and windows: `"auto"` (system language) or a code such as `"en"`, `"it"`. Also changeable in Settings.
+- `stt_model`, `llm_model`, `fallback_models`, `stt_fallback_models`, `max_seconds`, `restore_clipboard`.
+- `default_prompt`: base prompt, always applied (cleaning up the dictated text). The `prompt` of the app rule is added to it.
+- `dictionary`: words/names to write exactly like this.
+- `[[apps]]`: per-app rules, with `exe` (process names), `prompt`, `raw = true` to paste the transcription without AI, `send_enter = true` to press Enter after pasting (e.g. Claude desktop), `paste = "shift+insert"` for terminals that need it, `title_contains` to tell apart e.g. a website in the browser.
 
-Dopo ogni modifica usa **Ricarica configurazione** dalla tray.
+After every change use **Reload configuration** from the tray.
 
-## Note
+## Languages
 
-- Il microfono e' quello predefinito di Windows nel momento in cui inizia la registrazione.
-- Se l'AI non risponde, viene incollata la trascrizione grezza. Gli errori finiscono in `trascrittore.log` (senza testo dettato ne' chiavi).
-- La parte specifica di Windows e' isolata in `src/platform.rs` e `src/hotkey.rs`: il resto e' portabile per un eventuale porting a macOS/Linux.
-- Vedi `SECURITY.md` per la gestione dei segreti.
+The texts of the program are in `lang/<code>.toml` (`en.toml`, `it.toml`). The language is chosen like this: the installer language on Windows (written to `ui_language` the first time), or `ui_language` in `config.toml`, or *Settings > Language*; with `"auto"` the system language is used (and English if there is no file for it). Any text missing from a language falls back to English. To add a language, copy `lang/_template.toml` to `lang/<code>.toml`, translate it and open a pull request: the file is picked up by the build automatically. You can also try a language without building: put the file in a `lang` folder next to `config.toml` and restart the program. The step-by-step guide is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+The prompts in `config.toml` (`default_prompt`, `[[apps]]`) are written in English and tell the AI to reply in the language of the dictated text; you can translate or change them freely.
 
-## Piu' servizi AI e crediti
+## Notes
 
-`providers = ["groq", "openai", "anthropic"]` in `config.toml` (o dalla sezione *Altre AI*) e' l'ordine di priorita'. Per ogni dettatura il programma prova il primo servizio che ha una chiave; se risponde che i crediti sono finiti (HTTP 402, `insufficient_quota`, "credit balance is too low"), che la chiave e' rifiutata o che non e' raggiungibile, lo mette in pausa e passa al successivo (i crediti esauriti e le chiavi rifiutate vengono riprovati dopo un'ora). Groq prova prima i suoi modelli di riserva. Anthropic non trascrive l'audio, quindi per la trascrizione si usano Groq e OpenAI; per la correzione del testo tutti e tre. Modelli (leggeri di default: `gpt-4o-mini-transcribe` per l'audio, `gpt-4.1-nano` per la correzione, `claude-haiku-5-5` per Anthropic; si cambiano dalla sezione *Altre AI* o in `config.toml`): `openai_stt_model`, `openai_llm_model`, `anthropic_llm_model`. I modelli OpenAI "ragionanti" (gpt-5..., o3/o4) vengono chiamati senza temperatura, che non accettano; chiavi in `.env`: `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`.
+- The microphone is the Windows default one at the moment the recording starts.
+- If the AI does not answer, the raw transcription is pasted. Errors go to `trascrittore.log` (without dictated text or keys).
+- The Windows-specific part is isolated in `src/platform_windows.rs` and `src/hotkey_windows.rs` (Linux in the `_linux` files): the rest is portable.
+- See `SECURITY.md` for how secrets are handled.
 
-**Credito residuo:** nessuno dei tre servizi lo fornisce tramite una normale chiave API, quindi il programma non puo' leggerlo. La sezione *Altre AI* mostra per ognuno la chiave, se e' pronto o in pausa per crediti esauriti, le chiamate e i token dall'avvio e il link alla pagina dove il credito si legge.
+## More AI services and credit
 
-## Icona del programma
+`providers = ["groq", "openai", "anthropic"]` in `config.toml` (or from the *AI* section) is the priority order. For every dictation the program tries the first service that has a key; if it answers that credit is finished (HTTP 402, `insufficient_quota`, "credit balance is too low"), that the key is rejected or that it is unreachable, it pauses it and moves to the next (finished credit and rejected keys are retried after an hour). Groq tries its fallback models first. Anthropic does not transcribe audio, so Groq and OpenAI are used for transcription; all three for text correction. Models (light by default: `gpt-4o-mini-transcribe` for audio, `gpt-4.1-nano` for correction, `claude-haiku-5-5` for Anthropic; change them in the *AI* section or in `config.toml`): `openai_stt_model`, `openai_llm_model`, `anthropic_llm_model`. OpenAI "reasoning" models (gpt-5..., o3/o4) are called without temperature, which they do not accept; keys in `.env`: `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`.
 
-`assets/icon.ico` (16-256 px: microfono bianco con barre di voce su fondo a gradiente indaco-viola-rosa) e' incorporata nell'exe tramite `build.rs` e `assets/app.rc`: la usano Esplora risorse, il menu Start, l'installer, la voce di disinstallazione e la finestra Impostazioni. L'icona nella tray ha lo stesso microfono con il fondo che cambia con lo stato (blu pronto, rosso registra, ambra elabora, grigio errore). Per rigenerarla: `python assets/make_icon.py` (serve Pillow).
+**Remaining credit:** none of the three services provides it through a normal API key, so the program cannot read it. The *AI* section shows for each one the key, whether it is ready or paused for finished credit, calls and tokens since start and the link to the page where the credit can be read.
 
-## Icona con alone
+## Program icon
 
-Mentre tieni premuta la scorciatoia compare in basso a destra (sullo schermo della finestra attiva) un cerchio scuro con l'icona del programma in cui verra' incollato il testo, circondato da un alone rosso che si allarga con il volume del microfono e si restringe quando taci. Durante la trascrizione l'alone diventa ambra e "respira"; poi sparisce. La finestra non prende il focus, non intercetta i clic ed e' nascosta (nessun timer) quando non serve. Si disattiva dalla sezione Impostazioni o con `overlay = false` in `config.toml`.
+`assets/icon.ico` (16-256 px: white microphone with voice bars on an indigo-violet-pink gradient background) is embedded in the exe through `build.rs` and `assets/app.rc`: it is used by Explorer, the Start menu, the installer, the uninstall entry and the Settings window. The tray icon has the same microphone with a background that changes with the state (blue ready, red recording, amber processing, grey error). To regenerate it: `python assets/make_icon.py` (needs Pillow).
 
-## Test
+## Halo icon
 
-`cargo test` verifica il parsing della configurazione, l'interruttore `debug` in `config.toml`, il formato della data nel log, i prompt per app, il salvataggio della chiave in `.env`, la lettura della release di aggiornamento (URL ammessi, SHA-256, marcatore `[installer]`), il passaggio ai modelli di riserva, la scelta della regola per app (inclusi `send_enter` e `raw`) il parsing della scorciatoia e la matematica dell'alone (livello in dB, raggio, lisciatura). Il disegno della finestra non e' testabile in automatico. La GitHub Action li esegue a ogni push e su ogni pull request, prima della build.
+While you hold the hotkey, a dark circle appears at the bottom right (on the screen of the active window) with the icon of the program the text will be pasted into, surrounded by a red halo that widens with the microphone volume and narrows when you are silent. During transcription the halo turns amber and "breathes"; then it disappears. The window does not take focus, does not intercept clicks and is hidden (no timer) when not needed. Turn it off in Settings or with `overlay = false` in `config.toml`.
 
-## Spazio occupato
+## Tests
 
-- **Audio**: la registrazione sta solo in RAM e non viene mai scritta su disco. Il buffer e' limitato da `max_seconds` (120 s: circa 23 MB a 48 kHz durante la registrazione, qualche MB per una dettatura normale) e viene liberato appena finita l'elaborazione.
-- **Log**: `trascrittore.log` (vedi sotto) e' limitato a due file da 512 KB al massimo (`.log` e `.log.1`).
-- **File fissi**: `config.toml` e `.env` nella cartella del programma (`C:\ProgramData\Trascrittore` con l'installer), pochi KB. Il programma installato e' un solo `.exe` di pochi MB.
-- **Aggiornamenti**: il nuovo `.exe` viene scaricato accanto al vecchio e il file `.old` viene cancellato al riavvio successivo; l'eventuale installer scaricato in `%TEMP%\Trascrittore-Update` viene cancellato all'avvio successivo.
-- **Contatori di utilizzo**: sono in memoria (poche righe per modello) e si azzerano alla chiusura.
-- A riposo il programma non fa nulla (icona nella tray e un controllo aggiornamenti ogni 6 ore, se hai il token); la finestra impostazioni esiste solo quando e' aperta.
+`cargo test` checks the configuration parsing, the `debug` switch in `config.toml`, the date format in the log, the per-app prompts, saving the key in `.env`, reading the update release (allowed URLs, SHA-256, the `[installer]` marker), the switch to fallback models, the choice of the per-app rule (including `send_enter` and `raw`), the hotkey parsing, the halo maths (level in dB, radius, smoothing) and the language files (same keys and placeholders in every language, every text used by the code exists, language detection from the system locale, discovery of new files). The drawing of the window cannot be tested automatically. The GitHub Action runs them at every push and on every pull request, before the build.
 
-## Licenza e note legali / License and legal notes
+## Space used
 
-Il codice e' **visibile ma non riutilizzabile** (source-available): puoi leggerlo e usare gratuitamente i programmi pubblicati nelle Release, non puoi copiarlo, ridistribuirlo o farne derivati. Contributi (per esempio nuove lingue) benvenuti, vedi [CONTRIBUTING.md](CONTRIBUTING.md). *The source is **readable but not reusable** (source-available): you may read it and use the released programs for free; copying, redistribution and derivative works are not allowed. Contributions such as new languages are welcome.*
+- **Audio**: the recording lives only in RAM and is never written to disk. The buffer is limited by `max_seconds` (120 s: about 23 MB at 48 kHz while recording, a few MB for a normal dictation) and is freed as soon as processing ends.
+- **Log**: `trascrittore.log` is limited to two files of at most 512 KB (`.log` and `.log.1`).
+- **Fixed files**: `config.toml` and `.env` in the program folder (`C:\ProgramData\Trascrittore` with the installer), a few KB. The installed program is a single `.exe` of a few MB.
+- **Updates**: the new `.exe` is downloaded next to the old one and the `.old` file is deleted at the next restart; any installer downloaded to `%TEMP%\Trascrittore-Update` is deleted at the next startup.
+- **Usage counters**: they are in memory (a few lines per model) and reset on exit.
+- At rest the program does nothing (tray icon and an update check every 6 hours, if you have the token); the settings window exists only while it is open.
 
-| | Italiano | English |
+## License and legal notes
+
+The code is **readable but not reusable** (source-available): you may read it and use the programs published in the Releases for free; you may not copy it, redistribute it or make derivative works. Contributions (for example new languages) are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+| | English | Italiano |
 |---|---|---|
-| Licenza | [LICENSE.it.txt](legal/LICENSE.it.txt) | [LICENSE](LICENSE) |
-| Informativa privacy | [PRIVACY.it.md](legal/PRIVACY.it.md) | [PRIVACY.en.md](legal/PRIVACY.en.md) |
-| Avviso sui servizi AI di terzi | [DISCLAIMER.it.txt](legal/DISCLAIMER.it.txt) | [DISCLAIMER.en.txt](legal/DISCLAIMER.en.txt) |
-| Componenti di terzi | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | |
+| License | [LICENSE](LICENSE) | [LICENSE.it.txt](legal/LICENSE.it.txt) |
+| Privacy notice | [PRIVACY.en.md](legal/PRIVACY.en.md) | [PRIVACY.it.md](legal/PRIVACY.it.md) |
+| Notice about third-party AI services | [DISCLAIMER.en.txt](legal/DISCLAIMER.en.txt) | [DISCLAIMER.it.txt](legal/DISCLAIMER.it.txt) |
+| Third-party components | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | |
 
-**Importante:** Groq, OpenAI e Anthropic trattano i dati che invii secondo i loro termini; l'Autore non garantisce come li trattano. *Groq, OpenAI and Anthropic process what you send under their own terms; the Author does not guarantee how they handle it.* Questi testi non sono una consulenza legale. / *These texts are not legal advice.*
+**Important:** Groq, OpenAI and Anthropic process the data you send under their own terms; the Author does not guarantee how they handle it. These texts are not legal advice.
 
 <a href="https://slint.dev"><img src="https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png" alt="Made with Slint" height="48"></a>

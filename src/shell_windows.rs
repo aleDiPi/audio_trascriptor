@@ -1,7 +1,8 @@
 //! Icona nella tray e ciclo dei messaggi di Windows (thread principale).
 
 use crate::app::{icon, idle_tip};
-use crate::{config, gui, platform, Event, Ui};
+use crate::i18n::t;
+use crate::{config, gui, i18n, platform, Event, Ui};
 use std::ptr::null_mut;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
@@ -19,13 +20,14 @@ pub fn waker() -> Arc<dyn Fn() + Send + Sync> {
 }
 
 pub fn run(cfg: &config::Config, ev_tx: Sender<Event>, ui_rx: Receiver<(Ui, String)>) {
-    let m_auto = CheckMenuItem::new("Avvia con Windows", true, platform::autostart_enabled(), None);
-    let m_set = MenuItem::new("Impostazioni...", true, None);
-    let m_cfg = MenuItem::new("Apri cartella configurazione", true, None);
-    let m_dbg = CheckMenuItem::new("Modalita' debug (log dettagliato)", true, cfg.debug, None);
-    let m_log = MenuItem::new("Apri log", true, None);
-    let m_reload = MenuItem::new("Ricarica configurazione", true, None);
-    let m_quit = MenuItem::new("Esci", true, None);
+    let m_auto = CheckMenuItem::new(t("tray.autostart_windows"), true, platform::autostart_enabled(), None);
+    let m_set = MenuItem::new(t("tray.settings"), true, None);
+    let m_cfg = MenuItem::new(t("tray.config_folder"), true, None);
+    let m_dbg = CheckMenuItem::new(t("tray.debug"), true, cfg.debug, None);
+    let m_log = MenuItem::new(t("tray.open_log"), true, None);
+    let m_reload = MenuItem::new(t("tray.reload"), true, None);
+    let m_quit = MenuItem::new(t("tray.quit"), true, None);
+    let mut lang_seen = i18n::generation();
     let menu = Menu::new();
     let _ = menu.append_items(&[&m_set, &m_auto, &m_dbg, &m_log, &m_cfg, &m_reload, &PredefinedMenuItem::separator(), &m_quit]);
     let tray = TrayIconBuilder::new()
@@ -34,7 +36,7 @@ pub fn run(cfg: &config::Config, ev_tx: Sender<Event>, ui_rx: Receiver<(Ui, Stri
         .with_tooltip(idle_tip(&cfg.hotkey))
         .with_icon(icon(Ui::Idle))
         .build()
-        .expect("impossibile creare l'icona nella tray");
+        .expect("cannot create the tray icon");
 
     let menu_rx = MenuEvent::receiver();
     let tray_rx = TrayIconEvent::receiver();
@@ -45,6 +47,17 @@ pub fn run(cfg: &config::Config, ev_tx: Sender<Event>, ui_rx: Receiver<(Ui, Stri
             break;
         }
         if msg.hwnd.is_null() && msg.message == WM_APP {
+            // the language was changed in the settings: rewrite the menu labels
+            if lang_seen != i18n::generation() {
+                lang_seen = i18n::generation();
+                m_auto.set_text(t("tray.autostart_windows"));
+                m_set.set_text(t("tray.settings"));
+                m_cfg.set_text(t("tray.config_folder"));
+                m_dbg.set_text(t("tray.debug"));
+                m_log.set_text(t("tray.open_log"));
+                m_reload.set_text(t("tray.reload"));
+                m_quit.set_text(t("tray.quit"));
+            }
             while let Ok((state, text)) = ui_rx.try_recv() {
                 let _ = tray.set_icon(Some(icon(state)));
                 let tip = if state == Ui::Idle { idle_tip(&config::load().hotkey) } else { text };

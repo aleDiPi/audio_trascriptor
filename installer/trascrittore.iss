@@ -1,5 +1,9 @@
-; Installer Inno Setup per Trascrittore audio. Compilato dalla GitHub Action (vedi .github/workflows/build.yml).
-; Compilazione manuale:  ISCC.exe /DAppVersion=0.1.0 installer\trascrittore.iss   (dopo cargo build --release)
+; Inno Setup installer for Trascrittore audio. Built by the GitHub Action (see .github/workflows/build.yml).
+; Manual build:  ISCC.exe /DAppVersion=0.1.0 installer\trascrittore.iss   (after cargo build --release)
+;
+; Languages: the wizard starts in the language of Windows and the person can pick another one in the first dialog; the
+; whole wizard switches at once. The chosen language is also written to config.toml (ui_language) at the end.
+; To add a language: add a line to [Languages] and a block of lines to [CustomMessages] (see CONTRIBUTING.md).
 
 #ifndef AppVersion
   #define AppVersion "0.1.0"
@@ -10,9 +14,9 @@ AppId={{8F2D5B1A-3C47-4E9B-A6D1-52C7B0E94F13}
 AppName=Trascrittore audio
 AppVersion={#AppVersion}
 AppPublisher=aleDiPi
-; Programma in C:\Program Files\Trascrittore (per tutto il PC, 64 bit). Dati scrivibili (config.toml, .env, log) in C:\ProgramData\Trascrittore
+; Program in C:\Program Files\Trascrittore (whole PC, 64 bit). Writable data (config.toml, .env, log) in C:\ProgramData\Trascrittore
 DefaultDirName={autopf}\Trascrittore
-; Chi aveva la versione precedente (cartella ProgramData) viene spostato in Program Files
+; Whoever had the previous version (ProgramData folder) is moved to Program Files
 UsePreviousAppDir=no
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
@@ -23,46 +27,51 @@ OutputBaseFilename=Trascrittore-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; The first dialog proposes the language of Windows and lets the person pick another one; the wizard then switches at once
+ShowLanguageDialog=yes
+UsePreviousLanguage=no
+LanguageDetectionMethod=uilanguage
 UninstallDisplayIcon={app}\trascrittore.exe
 SetupIconFile=..\assets\icon.ico
-; Stesso nome del mutex usato dal programma: l'installer chiede di chiuderlo se e' in esecuzione
+; Same mutex name used by the program: the installer asks to close it if it is running
 AppMutex=Local\TrascrittoreAudioSingleInstance
 
 [Languages]
-; Prima pagina dell'installer: avviso su servizi AI di terzi e privacy (obbligo di accettarlo per proseguire). Una riga LicenseFile per ogni lingua.
+; First page of the installer: notice about third-party AI services and privacy (it must be accepted to continue). One LicenseFile for each language.
+Name: "english"; MessagesFile: "compiler:Default.isl"; LicenseFile: "..\legal\DISCLAIMER.en.txt"
 Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"; LicenseFile: "..\legal\DISCLAIMER.it.txt"
 
 [Types]
-Name: "compact"; Description: "Solo il programma (consigliato)"
-Name: "full"; Description: "Programma + strumenti di sviluppo (Rust e Visual Studio Build Tools)"
-Name: "custom"; Description: "Personalizzata"; Flags: iscustom
+Name: "compact"; Description: "{cm:TypeCompact}"
+Name: "full"; Description: "{cm:TypeFull}"
+Name: "custom"; Description: "{cm:TypeCustom}"; Flags: iscustom
 
 [Components]
 Name: "app"; Description: "Trascrittore audio"; Types: compact full custom; Flags: fixed
-Name: "devtools"; Description: "Rust + Visual Studio Build Tools (servono solo per compilare dal sorgente, download di diversi GB)"; Types: full
+Name: "devtools"; Description: "{cm:CompDevtools}"; Types: full
 
 [Dirs]
-; Dati del programma: gli utenti del PC possono scriverci (impostazioni, chiavi, log). L'exe sta fuori, in Program Files, non modificabile senza amministratore
+; Program data: the users of the PC can write there (settings, keys, log). The exe stays outside, in Program Files, not modifiable without administrator rights
 Name: "{commonappdata}\Trascrittore"; Permissions: users-modify
 
 [InstallDelete]
-; Resti della versione precedente installata in ProgramData (solo programma e script: config e .env restano)
+; Leftovers of the previous version installed in ProgramData (program and scripts only: config and .env stay)
 Type: files; Name: "{commonappdata}\Trascrittore\trascrittore.exe"
 Type: files; Name: "{commonappdata}\Trascrittore\trascrittore.exe.old"
 Type: filesandordirs; Name: "{commonappdata}\Trascrittore\scripts"
 
 [Tasks]
-Name: "autostart"; Description: "Avvia Trascrittore con Windows (parte ridotto nella tray)"
+Name: "autostart"; Description: "{cm:TaskAutostart}"
 
 [Files]
 Source: "..\target\release\trascrittore.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\scripts\setup-windows.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
-; Configurazione e chiavi: create solo se mancano (non sovrascritte dagli aggiornamenti); la disinstallazione le cancella (vedi [UninstallDelete])
+; Configuration and keys: created only if missing (not overwritten by updates); uninstalling deletes them (see [UninstallDelete])
 Source: "..\config\config.example.toml"; DestDir: "{commonappdata}\Trascrittore"; DestName: "config.toml"; Flags: onlyifdoesntexist
 Source: "..\.env.example"; DestDir: "{commonappdata}\Trascrittore"; DestName: ".env"; Flags: onlyifdoesntexist
 
 [UninstallDelete]
-; La disinstallazione non lascia nulla in giro: dati (config.toml, .env con le chiavi, log), resti di versioni precedenti e download temporanei
+; Uninstalling leaves nothing behind: data (config.toml, .env with the keys, log), leftovers of previous versions and temporary downloads
 Type: filesandordirs; Name: "{commonappdata}\Trascrittore"
 Type: filesandordirs; Name: "{userappdata}\Trascrittore"
 Type: filesandordirs; Name: "{localappdata}\Programs\Trascrittore"
@@ -71,18 +80,66 @@ Type: filesandordirs; Name: "{app}"
 
 [Icons]
 Name: "{autoprograms}\Trascrittore audio"; Filename: "{app}\trascrittore.exe"
-Name: "{autoprograms}\Trascrittore - cartella configurazione"; Filename: "{commonappdata}\Trascrittore"
+Name: "{autoprograms}\{cm:ConfigFolderShortcut}"; Filename: "{commonappdata}\Trascrittore"
 
 [Registry]
-; Voce di avvio automatico: rimossa alla disinstallazione anche se l'ha creata il menu della tray
+; Autostart entry: removed on uninstall even if the tray menu created it
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "TrascrittoreAudio"; Flags: dontcreatekey uninsdeletevalue
-; Eventuale avvio automatico della vecchia installazione per-utente: viene sostituito da quello sotto (se scelto)
-; Stessa chiave e valore usati dalla voce "Avvia con Windows" del menu nella tray
+; Autostart of the old per-user installation: replaced by the one below (if chosen)
+; Same key and value used by the "Start with Windows" entry of the tray menu
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "TrascrittoreAudio"; ValueData: """{app}\trascrittore.exe"""; Tasks: autostart; Flags: uninsdeletevalue
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\setup-windows.ps1"""; Components: devtools; StatusMsg: "Installo Rust e Visual Studio Build Tools (puo' richiedere diversi minuti)..."; Flags: waituntilterminated
-Filename: "{app}\trascrittore.exe"; Description: "Avvia Trascrittore audio"; Flags: nowait postinstall
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\setup-windows.ps1"""; Components: devtools; StatusMsg: "{cm:StatusDevtools}"; Flags: waituntilterminated
+; Tells the program the language chosen in the wizard; it is saved only if no language was chosen before (see config.rs)
+Filename: "{app}\trascrittore.exe"; Parameters: "--set-language {code:ProgramLanguage}"; Flags: runhidden waituntilterminated; Check: ChosenInWizard
+Filename: "{app}\trascrittore.exe"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall
+
+[CustomMessages]
+english.TypeCompact=Program only (recommended)
+english.TypeFull=Program + development tools (Rust and Visual Studio Build Tools)
+english.TypeCustom=Custom
+english.CompDevtools=Rust + Visual Studio Build Tools (only needed to build from source, a download of several GB)
+english.TaskAutostart=Start Trascrittore with Windows (starts minimized in the tray)
+english.ConfigFolderShortcut=Trascrittore - configuration folder
+english.StatusDevtools=Installing Rust and Visual Studio Build Tools (this can take several minutes)...
+english.LaunchApp=Start Trascrittore audio
+english.TokenPageTitle=Automatic updates (optional)
+english.TokenPageSub=Read-only GitHub token
+english.TokenPageIntro=With a token the program updates itself. Leave the field empty to update by hand by downloading the new installer. The token stays only on your PC (.env file), it is not inside the program.
+english.TokenLabel=GitHub token:
+english.TokenSteps=How to create the token (click the link above, you need GitHub access with the aleDiPi account):%n1. Token name: for example "Trascrittore audio".%n2. Expiration: choose an expiry (for example 1 year; when it expires you create another one from Settings).%n3. Resource owner: aleDiPi.%n4. Repository access: "Only select repositories" and choose only aleDiPi/audio_trascriptor.%n5. Permissions, Repository permissions: Contents = "Read-only". Do not add other permissions.%n6. Press "Generate token" and copy the code right away (it starts with github_pat_): GitHub shows it only once.%n7. Paste it in the field above. You can also do it later from the program Settings (click the icon in the tray).
+english.TokenNoSpaces=The token must not contain spaces.
+english.TokenNoNetwork=Cannot connect to GitHub (network missing or blocked): the token was not verified.
+english.TokenRejected=GitHub does not accept the token (wrong, revoked or expired).
+english.TokenNoRepo=The token does not see the repository aleDiPi/audio_trascriptor. Check: Resource owner = aleDiPi, Repository access = only audio_trascriptor, Permissions > Contents = Read-only.
+english.TokenHttpError=GitHub answered with HTTP error %1.
+english.TokenSavedRejected=The saved token is no longer accepted by GitHub: paste a new one (or leave it empty to keep it as it is).
+english.TokenMemoHeader=Automatic updates:
+english.TokenMemoKept=GitHub token already present: it is kept
+english.TokenAskFix=%1%n%nYes = fix the token%nNo = continue without a token (manual updates)
+italian.TypeCompact=Solo il programma (consigliato)
+italian.TypeFull=Programma + strumenti di sviluppo (Rust e Visual Studio Build Tools)
+italian.TypeCustom=Personalizzata
+italian.CompDevtools=Rust + Visual Studio Build Tools (servono solo per compilare dal sorgente, download di diversi GB)
+italian.TaskAutostart=Avvia Trascrittore con Windows (parte ridotto nella tray)
+italian.ConfigFolderShortcut=Trascrittore - cartella configurazione
+italian.StatusDevtools=Installo Rust e Visual Studio Build Tools (puo' richiedere diversi minuti)...
+italian.LaunchApp=Avvia Trascrittore audio
+italian.TokenPageTitle=Aggiornamenti automatici (facoltativo)
+italian.TokenPageSub=Token GitHub di sola lettura
+italian.TokenPageIntro=Con un token il programma si aggiorna da solo. Lascia il campo vuoto per aggiornare a mano scaricando il nuovo installer. Il token resta solo sul tuo PC (file .env), non e' dentro il programma.
+italian.TokenLabel=Token GitHub:
+italian.TokenSteps=Come creare il token (clic sul link qui sopra, serve l'accesso a GitHub con l'account aleDiPi):%n1. Token name: per esempio "Trascrittore audio".%n2. Expiration: scegli una scadenza (per esempio 1 anno; alla scadenza ne crei un altro dalle Impostazioni).%n3. Resource owner: aleDiPi.%n4. Repository access: "Only select repositories" e scegli solo aleDiPi/audio_trascriptor.%n5. Permissions, Repository permissions: Contents = "Read-only". Non aggiungere altri permessi.%n6. Premi "Generate token" e copia subito il codice (inizia con github_pat_): GitHub lo mostra una volta sola.%n7. Incollalo nel campo qui sopra. Puoi anche farlo dopo dalle Impostazioni del programma (clic sull'icona nella tray).
+italian.TokenNoSpaces=Il token non deve contenere spazi.
+italian.TokenNoNetwork=Non riesco a collegarmi a GitHub (rete assente o bloccata): il token non e' stato verificato.
+italian.TokenRejected=GitHub non accetta il token (errato, revocato o scaduto).
+italian.TokenNoRepo=Il token non vede il repository aleDiPi/audio_trascriptor. Controlla: Resource owner = aleDiPi, Repository access = solo audio_trascriptor, Permissions > Contents = Read-only.
+italian.TokenHttpError=GitHub ha risposto con errore HTTP %1.
+italian.TokenSavedRejected=Il token salvato non e' piu' accettato da GitHub: incollane uno nuovo (o lascia vuoto per tenerlo cosi' com'e').
+italian.TokenMemoHeader=Aggiornamenti automatici:
+italian.TokenMemoKept=token GitHub gia' presente: viene mantenuto
+italian.TokenAskFix=%1%n%nSi' = correggi il token%nNo = continua senza token (aggiornamenti manuali)
 
 [Code]
 var
@@ -103,11 +160,8 @@ var
   Steps: TNewMemo;
   Link: TNewStaticText;
 begin
-  TokenPage := CreateInputQueryPage(wpSelectTasks, 'Aggiornamenti automatici (facoltativo)',
-    'Token GitHub di sola lettura',
-    'Con un token il programma si aggiorna da solo. Lascia il campo vuoto per aggiornare a mano scaricando il nuovo installer. ' +
-    'Il token resta solo sul tuo PC (file .env), non e'' dentro il programma.');
-  TokenPage.Add('Token GitHub:', True);
+  TokenPage := CreateInputQueryPage(wpSelectTasks, CustomMessage('TokenPageTitle'), CustomMessage('TokenPageSub'), CustomMessage('TokenPageIntro'));
+  TokenPage.Add(CustomMessage('TokenLabel'), True);
 
   Link := TNewStaticText.Create(TokenPage);
   Link.Parent := TokenPage.Surface;
@@ -127,15 +181,7 @@ begin
   Steps.Height := TokenPage.SurfaceHeight - Steps.Top;
   Steps.ReadOnly := True;
   Steps.ScrollBars := ssVertical;
-  Steps.Text :=
-    'Come creare il token (clic sul link qui sopra, serve l''accesso a GitHub con l''account aleDiPi):' + #13#10 +
-    '1. Token name: per esempio "Trascrittore audio".' + #13#10 +
-    '2. Expiration: scegli una scadenza (per esempio 1 anno; alla scadenza ne crei un altro dalle Impostazioni).' + #13#10 +
-    '3. Resource owner: aleDiPi.' + #13#10 +
-    '4. Repository access: "Only select repositories" e scegli solo aleDiPi/audio_trascriptor.' + #13#10 +
-    '5. Permissions, Repository permissions: Contents = "Read-only". Non aggiungere altri permessi.' + #13#10 +
-    '6. Premi "Generate token" e copia subito il codice (inizia con github_pat_): GitHub lo mostra una volta sola.' + #13#10 +
-    '7. Incollalo nel campo qui sopra. Puoi anche farlo dopo dalle Impostazioni del programma (clic sull''icona nella tray).';
+  Steps.Text := CustomMessage('TokenSteps');
 end;
 
 { Esito HTTP di una GET su api.github.com con il token (0 = rete non raggiungibile) }
@@ -158,40 +204,43 @@ begin
   end;
 end;
 
-{ '' = token utilizzabile, altrimenti il motivo }
-function CheckToken(Token: String): String;
+{ '' = usable token, otherwise the reason (translated). Rejected = GitHub refused the token or it cannot see the repository }
+function CheckToken(Token: String; var Rejected: Boolean): String;
 var
   Release, Repo: Integer;
 begin
   Result := '';
+  Rejected := False;
   if (Pos(' ', Token) > 0) or (Pos(#9, Token) > 0) then
   begin
-    Result := 'Il token non deve contenere spazi.';
+    Result := CustomMessage('TokenNoSpaces');
     exit;
   end;
   Release := GitHubStatus('https://api.github.com/repos/aleDiPi/audio_trascriptor/releases/tags/latest', Token);
   if Release = 200 then exit;
   if Release = 0 then
   begin
-    Result := 'Non riesco a collegarmi a GitHub (rete assente o bloccata): il token non e'' stato verificato.';
+    Result := CustomMessage('TokenNoNetwork');
     exit;
   end;
   if Release = 401 then
   begin
-    Result := 'GitHub non accetta il token (errato, revocato o scaduto).';
+    Result := CustomMessage('TokenRejected');
+    Rejected := True;
     exit;
   end;
   if (Release = 404) or (Release = 403) then
   begin
     Repo := GitHubStatus('https://api.github.com/repos/aleDiPi/audio_trascriptor', Token);
-    if Repo = 200 then exit; { il token vede il repository: la release "latest" e'' in ricostruzione, va bene }
+    if Repo = 200 then exit; { the token sees the repository: the "latest" release is being rebuilt, that is fine }
     if Repo = 401 then
-      Result := 'GitHub non accetta il token (errato, revocato o scaduto).'
+      Result := CustomMessage('TokenRejected')
     else
-      Result := 'Il token non vede il repository aleDiPi/audio_trascriptor. Controlla: Resource owner = aleDiPi, Repository access = solo audio_trascriptor, Permissions > Contents = Read-only.';
+      Result := CustomMessage('TokenNoRepo');
+    Rejected := True;
     exit;
   end;
-  Result := 'GitHub ha risposto con errore HTTP ' + IntToStr(Release) + '.';
+  Result := FmtMessage(CustomMessage('TokenHttpError'), [IntToStr(Release)]);
 end;
 
 { Token gia'' scritto in un file .env (cartella dati per tutto il PC, poi la vecchia per-utente); '' = nessuno }
@@ -222,6 +271,7 @@ end;
 function SavedTokenState: Integer;
 var
   Token, Reason: String;
+  Rejected: Boolean;
 begin
   if SavedState <> 0 then
   begin
@@ -233,11 +283,11 @@ begin
     SavedState := 1
   else
   begin
-    Reason := CheckToken(Token);
-    if (Pos('GitHub non accetta il token', Reason) = 1) or (Pos('Il token non vede il repository', Reason) = 1) then
+    Reason := CheckToken(Token, Rejected);
+    if Rejected then
       SavedState := 3
     else
-      SavedState := 2; { valido, oppure rete assente o errore del server: nel dubbio non lo tocco }
+      SavedState := 2; { valid, or network missing or server error: when in doubt it is left alone }
   end;
   Result := SavedState;
 end;
@@ -249,19 +299,20 @@ begin
   if SavedTokenState = 2 then
     Result := True
   else if SavedTokenState = 3 then
-    TokenPage.SubCaptionLabel.Caption := 'Il token salvato non e'' piu'' accettato da GitHub: incollane uno nuovo (o lascia vuoto per tenerlo cosi'' com''e'').';
+    TokenPage.SubCaptionLabel.Caption := CustomMessage('TokenSavedRejected');
 end;
 
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 begin
   Result := MemoDirInfo;
   if SavedTokenState = 2 then
-    Result := Result + NewLine + NewLine + 'Aggiornamenti automatici:' + NewLine + Space + 'token GitHub gia'' presente: viene mantenuto';
+    Result := Result + NewLine + NewLine + CustomMessage('TokenMemoHeader') + NewLine + Space + CustomMessage('TokenMemoKept');
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   Token, Reason: String;
+  Rejected: Boolean;
 begin
   Result := True;
   if CurPageID <> TokenPage.ID then exit;
@@ -269,12 +320,12 @@ begin
   if Token = '' then exit;
   WizardForm.NextButton.Enabled := False;
   try
-    Reason := CheckToken(Token);
+    Reason := CheckToken(Token, Rejected);
   finally
     WizardForm.NextButton.Enabled := True;
   end;
   if Reason = '' then exit;
-  if MsgBox(Reason + #13#10#13#10 + 'Si = correggi il token' + #13#10 + 'No = continua senza token (aggiornamenti manuali)', mbError, MB_YESNO) = IDYES then
+  if MsgBox(FmtMessage(CustomMessage('TokenAskFix'), [Reason]), mbError, MB_YESNO) = IDYES then
     Result := False
   else
     TokenPage.Values[0] := '';
@@ -320,10 +371,25 @@ begin
     FileCopy(OldDir + '\.env', NewDir + '\.env', True);
 end;
 
+{ Language code of the program for the language chosen in the wizard (the file names in lang/ are the codes) }
+function ProgramLanguage(Param: String): String;
+begin
+  Result := ActiveLanguage;
+  if Result = 'italian' then Result := 'it'
+  else if Result = 'english' then Result := 'en';
+end;
+
+{ Silent installations (self-update) never touch the language }
+function ChosenInWizard: Boolean;
+begin
+  Result := not WizardSilent;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
     MigrateOldUserFiles;
+
   { campo vuoto o installazione silenziosa (aggiornamento): il token gia' salvato non viene toccato }
   if (CurStep = ssPostInstall) and (Trim(TokenPage.Values[0]) <> '') then
     SaveToken(Trim(TokenPage.Values[0]));

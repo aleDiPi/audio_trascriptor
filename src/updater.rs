@@ -36,14 +36,14 @@ pub fn fetch_latest(token: &str) -> Result<Release, String> {
         .bearer_auth(token)
         .header("Accept", "application/vnd.github+json")
         .send()
-        .map_err(|e| format!("rete: {e}"))?;
+        .map_err(|e| crate::i18n::tf("err.network", &[("msg", &e.to_string())]))?;
     let status = resp.status();
     let body = resp.text().map_err(|e| e.to_string())?;
     if !status.is_success() {
         let code = status.as_u16();
         let repo = if matches!(code, 403 | 404) { repo_status(token) } else { None };
         let msg = release::explain_github_failure(code, repo, &release::api_message(&body));
-        config::log(&format!("controllo aggiornamenti: HTTP {code}, repository HTTP {repo:?}"));
+        config::log(&format!("update check: HTTP {code}, repository HTTP {repo:?}"));
         return Err(msg);
     }
     release::parse_release(&body)
@@ -56,13 +56,13 @@ fn download(token: &str, asset: &Asset) -> Result<Vec<u8>, String> {
         .bearer_auth(token) // reqwest toglie l'header sul redirect verso un altro host
         .header("Accept", "application/octet-stream")
         .send()
-        .map_err(|e| format!("rete: {e}"))?;
+        .map_err(|e| crate::i18n::tf("err.network", &[("msg", &e.to_string())]))?;
     if !resp.status().is_success() {
-        return Err(format!("download: HTTP {}", resp.status()));
+        return Err(crate::i18n::tf("err.download_http", &[("status", &resp.status().to_string())]));
     }
     let bytes = resp.bytes().map_err(|e| e.to_string())?;
     if !release::digest_matches(asset.digest.as_deref(), &release::hex(&Sha256::digest(&bytes))) {
-        return Err("file scaricato non valido (SHA-256 diverso): aggiornamento annullato".into());
+        return Err(crate::i18n::t("err.update_sha"));
     }
     Ok(bytes.to_vec())
 }
@@ -74,20 +74,20 @@ fn swap_in_place(token: &str, rel: &Release) -> Result<(), String> {
     let bytes = download(token, &rel.exe)?;
     let cur = std::env::current_exe().map_err(|e| e.to_string())?;
     let (new, old) = (cur.with_extension("exe.new"), cur.with_extension("exe.old"));
-    std::fs::write(&new, &bytes).map_err(|e| format!("scrittura {}: {e}", new.display()))?;
+    std::fs::write(&new, &bytes).map_err(|e| crate::i18n::tf("err.write_file", &[("path", &new.display().to_string()), ("err", &e.to_string())]))?;
     let _ = std::fs::remove_file(&old);
     if let Err(e) = std::fs::rename(&cur, &old) {
         let _ = std::fs::remove_file(&new);
-        return Err(format!("impossibile sostituire l'eseguibile: {e}"));
+        return Err(crate::i18n::tf("err.replace_exe", &[("err", &e.to_string())]));
     }
     if let Err(e) = std::fs::rename(&new, &cur) {
         let _ = std::fs::rename(&old, &cur); // ripristina
-        return Err(format!("impossibile installare il nuovo eseguibile: {e}"));
+        return Err(crate::i18n::tf("err.install_exe", &[("err", &e.to_string())]));
     }
     std::process::Command::new(&cur)
         .arg("--after-update")
         .spawn()
-        .map_err(|e| format!("riavvio: {e}"))?;
+        .map_err(|e| crate::i18n::tf("err.restart", &[("err", &e.to_string())]))?;
     std::process::exit(0);
 }
 
@@ -113,7 +113,7 @@ pub fn apt_install_args(deb: &std::path::Path) -> Vec<String> {
 /// Poi riavvia il programma. Se l'utente annulla la richiesta della password non cambia nulla.
 #[cfg(target_os = "linux")]
 fn install_deb(token: &str, rel: &Release) -> Result<(), String> {
-    let asset = rel.deb.as_ref().ok_or("il pacchetto .deb non e' ancora stato pubblicato nella release: riprova tra qualche minuto")?;
+    let asset = rel.deb.as_ref().ok_or_else(|| crate::i18n::t("err.deb_missing"))?;
     let bytes = download(token, asset)?;
     let dir = std::env::temp_dir().join("Trascrittore-Update");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -122,24 +122,24 @@ fn install_deb(token: &str, rel: &Release) -> Result<(), String> {
     let status = std::process::Command::new("pkexec")
         .args(apt_install_args(&path))
         .status()
-        .map_err(|e| format!("pkexec non disponibile: {e}"))?;
+        .map_err(|e| crate::i18n::tf("err.pkexec", &[("err", &e.to_string())]))?;
     let _ = std::fs::remove_dir_all(&dir);
     if !status.success() {
-        return Err("installazione annullata o non riuscita (password errata o apt occupato)".into());
+        return Err(crate::i18n::t("err.install_cancelled"));
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     // la nuova copia parte dopo che questa si e' chiusa (istanza unica)
     std::process::Command::new("sh")
         .args(["-c", "sleep 1; exec \"$0\" --after-update", &exe.display().to_string()])
         .spawn()
-        .map_err(|e| format!("riavvio: {e}"))?;
+        .map_err(|e| crate::i18n::tf("err.restart", &[("err", &e.to_string())]))?;
     std::process::exit(0);
 }
 
 /// Controlla subito; se c'e' una versione piu' recente la installa. Ok(false) = gia' aggiornato.
 pub fn check_and_apply(token: &str) -> Result<bool, String> {
     let rel = fetch_latest(token)?;
-    config::debug(|| format!("aggiornamenti: online {}, installato {}", rel.version, release::current_version().map_or("build locale".to_string(), |v| v.to_string())));
+    config::debug(|| format!("updates: online {}, installed {}", rel.version, release::current_version().map_or("local build".to_string(), |v| v.to_string())));
     if !release::needs_update(release::current_version(), rel.version) {
         return Ok(false);
     }
@@ -150,7 +150,7 @@ pub fn check_and_apply(token: &str) -> Result<bool, String> {
         }
         std::thread::sleep(Duration::from_secs(10));
     }
-    config::log(&format!("aggiornamento alla versione {}", rel.version));
+    config::log(&format!("updating to version {}", rel.version));
     #[cfg(target_os = "linux")]
     {
         install_deb(token, &rel)?;
@@ -160,12 +160,12 @@ pub fn check_and_apply(token: &str) -> Result<bool, String> {
     {
         let exe_dir_writable = std::env::current_exe().ok().and_then(|p| p.parent().map(release::dir_writable)).unwrap_or(false);
         if !rel.installer_required && !exe_dir_writable {
-            config::debug(|| "cartella del programma non scrivibile (Program Files): uso l'installer".into());
+            config::debug(|| "program folder not writable (Program Files): using the installer".into());
         }
         if !rel.installer_required && exe_dir_writable {
             match swap_in_place(token, &rel) {
                 Ok(()) => {}
-                Err(e) => config::log(&format!("aggiornamento in-place non riuscito, uso l'installer: {e}")),
+                Err(e) => config::log(&format!("in-place update failed, using the installer: {e}")),
             }
         }
         run_setup(token, &rel)?;
@@ -177,10 +177,7 @@ pub fn check_and_apply(token: &str) -> Result<bool, String> {
 #[cfg(target_os = "linux")]
 fn notify_update(version: release::Version) {
     let _ = std::process::Command::new("notify-send")
-        .args([
-            "Trascrittore audio",
-            &format!("Aggiornamento disponibile: {version}. Apri Impostazioni > Info > Aggiorna ora."),
-        ])
+        .args(["Trascrittore audio", &crate::i18n::tf("tray.update_notice", &[("version", &version.to_string())])])
         .spawn();
 }
 
@@ -197,7 +194,7 @@ pub fn start_background() {
                 if let Some(token) = config::update_token() {
                     #[cfg(windows)]
                     if let Err(e) = check_and_apply(&token) {
-                        config::log(&format!("controllo aggiornamenti: {e}"));
+                        config::log(&format!("update check: {e}"));
                     }
                     #[cfg(target_os = "linux")]
                     match fetch_latest(&token) {
@@ -206,7 +203,7 @@ pub fn start_background() {
                             notify_update(r.version);
                         }
                         Ok(_) => {}
-                        Err(e) => config::log(&format!("controllo aggiornamenti: {e}")),
+                        Err(e) => config::log(&format!("update check: {e}")),
                     }
                 }
             }
