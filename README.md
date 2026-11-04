@@ -69,7 +69,7 @@ Senza debug il log contiene solo avvio, errori e avvisi. **Non** scrive mai chia
 
 Il pacchetto `trascrittore.deb` e' nella stessa release di GitHub dell'installer Windows (stesso numero di versione). Il pacchetto e' compilato su Ubuntu 24.04, quindi serve **Linux Mint 22** o piu' recente (le versioni 21 e precedenti hanno una libreria di sistema troppo vecchia).
 
-**Installazione:** scarica `trascrittore.deb` dalla pagina Release (il repository e' privato: serve essere collegati a GitHub) e installalo con doppio clic (Gestore software) oppure:
+**Installazione:** scarica `trascrittore.deb` dalla pagina Release (compare dopo la fine della CI, circa mezz'ora dal merge; e' anche nella release fissa `latest`) (il repository e' privato: serve essere collegati a GitHub) e installalo con doppio clic (Gestore software) oppure:
 
 ```bash
 sudo apt install ./trascrittore.deb

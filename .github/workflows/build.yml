@@ -119,4 +119,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "v$TRASCRITTORE_VERSION" trascrittore.deb --clobber
+        run: |
+          gh release upload "v$TRASCRITTORE_VERSION" trascrittore.deb --clobber
+          # anche nella release fissa "latest" (link breve sempre uguale): se manca ancora, la crea il job Windows
+          gh release upload latest trascrittore.deb --clobber || echo "release latest non trovata: salto"
