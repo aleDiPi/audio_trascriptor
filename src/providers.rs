@@ -330,6 +330,18 @@ pub fn stt_order(order: &[Provider]) -> Vec<Provider> {
     order.iter().copied().filter(|p| p.supports_stt()).collect()
 }
 
+/// Almeno un servizio puo' trascrivere adesso (chiave presente, o modello locale scaricato). Se no, registrare
+/// sarebbe inutile: il programma avvisa l'utente invece di far parlare nel vuoto.
+pub fn stt_available(order: &[Provider], usable: impl Fn(Provider) -> bool) -> bool {
+    stt_order(order).into_iter().any(usable)
+}
+
+/// L'avviso "nessun servizio AI pronto" va mostrato al massimo ogni `gap` secondi (premere la scorciatoia
+/// piu' volte di seguito non deve riempire lo schermo di finestre).
+pub fn notice_due(last: Option<u64>, now: u64, gap: u64) -> bool {
+    last.map_or(true, |l| now.saturating_sub(l) >= gap)
+}
+
 /// Servizi che possono correggere il testo, nell'ordine di priorita'.
 pub fn llm_order(order: &[Provider]) -> Vec<Provider> {
     order.iter().copied().filter(|p| p.supports_llm()).collect()
@@ -595,5 +607,24 @@ mod tests {
         assert_eq!(st.status_at(Provider::Groq, true, 4000), (false, "Paused: out of credit (17 min)".to_string()));
         st.record(Provider::Groq, 40);
         assert!(st.usage_line(Provider::Groq).starts_with("Since start: 1 calls, 40 tokens"));
+    }
+
+    #[test]
+    fn stt_available_needs_a_ready_service_that_can_transcribe() {
+        let order = [Provider::Anthropic, Provider::Groq, Provider::Local];
+        assert!(!stt_available(&order, |_| false));
+        // Anthropic non trascrive: anche con la sua chiave non basta
+        assert!(!stt_available(&order, |p| p == Provider::Anthropic));
+        assert!(stt_available(&order, |p| p == Provider::Groq));
+        assert!(stt_available(&order, |p| p == Provider::Local));
+        assert!(!stt_available(&[], |_| true));
+    }
+
+    #[test]
+    fn notice_is_throttled() {
+        assert!(notice_due(None, 100, 30));
+        assert!(!notice_due(Some(100), 120, 30));
+        assert!(notice_due(Some(100), 130, 30));
+        assert!(notice_due(Some(500), 100, 30) == false); // orologio tornato indietro: non si ripete subito
     }
 }

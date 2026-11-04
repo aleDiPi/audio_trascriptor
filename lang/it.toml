@@ -248,3 +248,10 @@ no_access = "Il token non vede il repository aleDiPi/audio_trascriptor: nella pa
 forbidden = "GitHub nega l'accesso (permessi insufficienti o troppe richieste){detail}."
 not_found = "GitHub HTTP 404: release non trovata oppure token senza accesso al repository{detail}."
 http = "GitHub HTTP {status}{detail}."
+
+[popup]
+no_ai_title = "Trascrittore audio"
+no_ai_text = "Nessun servizio AI e' pronto: non c'e' nessuna chiave API ne' il modello locale, quindi non si puo' trascrivere.\n\nAggiungi una chiave (Groq ha un piano gratuito) o scarica il modello locale in Impostazioni > AI."
+ok_hint = "Premi OK per aprire le Impostazioni."
+open_settings = "Apri le Impostazioni"
+close = "Chiudi"

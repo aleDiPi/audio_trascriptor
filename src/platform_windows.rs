@@ -38,6 +38,16 @@ pub fn cleanup_after_update() {
     let _ = std::fs::remove_dir_all(std::env::temp_dir().join("Trascrittore-Update"));
 }
 
+/// Finestra di avviso con due pulsanti (OK / Annulla): restituisce true se l'utente preme OK. Blocca finche'
+/// non viene chiusa: va chiamata da un thread a parte. `ok_label` e `cancel_label` non si possono cambiare in
+/// Windows, per questo il testo del messaggio dice cosa fa OK.
+pub fn ask(title: &str, text: &str, _ok_label: &str, _cancel_label: &str) -> bool {
+    let w = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let (t, x) = (w(title), w(text));
+    let r = unsafe { MessageBoxW(null_mut(), x.as_ptr(), t.as_ptr(), MB_OKCANCEL | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST) };
+    r == IDOK
+}
+
 /// Apre un file, una cartella o un indirizzo web con il programma predefinito.
 pub fn open(target: impl AsRef<std::ffi::OsStr>) {
     let _ = std::process::Command::new("explorer").arg(target).spawn();

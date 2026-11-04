@@ -473,3 +473,15 @@ forbidden = ""
 not_found = ""
 # GitHub HTTP {status}{detail}.
 http = ""
+
+[popup]
+# Title of the window shown when no AI service is ready
+no_ai_title = ""
+# Message: no API key and no local model
+no_ai_text = ""
+# Added to the message on Windows only, where the buttons are always OK/Cancel
+ok_hint = ""
+# Label of the button that opens Settings (Linux)
+open_settings = ""
+# Label of the button that closes the window (Linux)
+close = ""
