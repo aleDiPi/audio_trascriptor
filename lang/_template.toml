@@ -74,6 +74,10 @@ card_dictation = ""
 # Show the icon with the sound halo at the bottom right
 overlay_check = ""
 # Sounds
+card_echo = ""
+echo_check = ""
+echo_note = ""
+echo_unavailable = ""
 card_sounds = ""
 # Sound when recording starts and ends
 sounds_check = ""

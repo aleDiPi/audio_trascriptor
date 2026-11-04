@@ -142,6 +142,10 @@ As a **last resort**, when no network service answers (credit finished, key reje
 - No data leaves the PC while the local service is used. No credit or key is needed.
 - The build compiles whisper.cpp (needs CMake and libclang; on the GitHub runner they are already there, see `LIBCLANG_PATH` in `.github/workflows/build.yml`). The exe grows by a few MB.
 
+## Computer sound removal (echo)
+
+Off by default (`echo_cancel = true` in `config.toml`, or Settings > *Computer sound*). While you dictate, the app also records what goes to the speakers (Windows: WASAPI loopback; Linux: `parec` on the default output monitor, package `pulseaudio-utils`) and, when you stop, subtracts it from the microphone with an adaptive filter, after finding the delay between the two. With headphones there is nothing to remove and the microphone stays untouched. It is a software filter, not a miracle: very loud speakers or heavy room echo may leave traces. If the option is not available on your system, it is greyed out.
+
 ## Sounds
 
 A short sound (less than 0.25 s) marks the start and another the end of the recording. They are tones synthesized in memory (no file) and played asynchronously. They do not end up in the recording: at the start the program discards the first instants of the audio (sound duration plus a margin), at the end the microphone is already closed when the sound starts. So start talking after the sound. Adjust them in Settings or with `sounds`, `sound_style` (`soft`, `click`, `chime`) and `sound_volume` (0-100) in `config.toml`.

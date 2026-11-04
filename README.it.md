@@ -143,6 +143,10 @@ Come **ultima risorsa**, quando nessun servizio in rete risponde (crediti finiti
 - Nessun dato esce dal PC mentre usa il locale. Non serve credito ne' chiave.
 - La build compila whisper.cpp (serve CMake e libclang; sul runner di GitHub ci sono gia', vedi `LIBCLANG_PATH` in `.github/workflows/build.yml`). L'exe cresce di qualche MB.
 
+## Rimozione del suono del computer (eco)
+
+Disattivata di default (`echo_cancel = true` in `config.toml`, o Impostazioni > *Suono del computer*). Mentre detti, l'app registra anche ciò che esce dagli altoparlanti (Windows: loopback WASAPI; Linux: `parec` sul monitor dell'uscita predefinita, pacchetto `pulseaudio-utils`) e, quando fermi, lo sottrae al microfono con un filtro adattivo, dopo aver trovato il ritardo tra i due. Con le cuffie non c'è nulla da togliere e il microfono resta intatto. È un filtro software: con altoparlanti molto forti o molto eco nella stanza possono restare tracce. Se l'opzione non è disponibile sul tuo sistema, appare disattivata.
+
 ## Suoni
 
 Un suono breve (meno di 0,25 s) segnala l'inizio e un altro la fine della registrazione. Sono toni sintetizzati in memoria (nessun file) e suonati da Windows in modo asincrono. Non finiscono nella registrazione: all'inizio il programma scarta i primi istanti dell'audio (durata del suono piu' un margine), alla fine il microfono e' gia' chiuso quando il suono parte. Quindi comincia a parlare dopo il suono. Si regolano in Impostazioni o con `sounds`, `sound_style` (`soft`, `click`, `chime`) e `sound_volume` (0-100) in `config.toml`.

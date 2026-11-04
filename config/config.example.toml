@@ -44,6 +44,11 @@ local_model = "base"
 # Icon at the bottom right while you hold the hotkey: it shows the app where the text will be pasted, with a halo that follows the volume. Also changeable from Settings.
 overlay = true
 
+# Remove the sound coming from the computer itself (music, video, the other person in a call) from the recording.
+# It records what goes to the speakers and subtracts it from the microphone. Off by default; also changeable from Settings.
+# On Linux it needs `parec` (package pulseaudio-utils).
+echo_cancel = false
+
 # Short sound when recording starts and when it ends (also changeable from Settings).
 # sound_style: "soft" (two soft notes), "click" (a tap) or "chime" (a bell). sound_volume: 0 to 100.
 sounds = true

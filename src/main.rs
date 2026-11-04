@@ -15,7 +15,7 @@ mod i18n;
 mod backup;
 #[cfg(desktop)]
 mod filepick;
-#[cfg(desktop)]
+mod aec;
 mod audio;
 #[cfg(any(desktop, test))]
 #[cfg_attr(not(desktop), allow(dead_code))]
@@ -206,7 +206,7 @@ mod app {
                         // il suono d'avvio non deve finire nella registrazione: si scartano i suoi millisecondi
                         let played = sounds::play(sounds::Kind::Start);
                         let skip_ms = if played > 0 { played + 120 } else { 0 };
-                        match audio::start(cfg.max_seconds, skip_ms) {
+                        match audio::start(cfg.max_seconds, skip_ms, cfg.echo_cancel) {
                             Ok(r) => {
                                 rec = Some((r, exe, title));
                                 updater::BUSY.store(true, std::sync::atomic::Ordering::Relaxed);

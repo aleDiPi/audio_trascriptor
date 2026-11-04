@@ -13,6 +13,7 @@ static DIR: OnceLock<PathBuf> = OnceLock::new();
 static DEBUG: AtomicBool = AtomicBool::new(false);
 static TEXT_FLAG: AtomicBool = AtomicBool::new(false);
 static OVERLAY: AtomicBool = AtomicBool::new(true);
+static ECHO_CANCEL: AtomicBool = AtomicBool::new(false);
 static AUTO_UPDATE: AtomicBool = AtomicBool::new(true);
 static SOUNDS: AtomicBool = AtomicBool::new(true);
 static SOUND_VOLUME: AtomicU8 = AtomicU8::new(DEFAULT_SOUND_VOLUME);
@@ -56,6 +57,8 @@ pub struct Config {
     pub sound_volume: i64,
     /// Tipo di suono: soft, click o chime
     pub sound_style: String,
+    /// Toglie dalla registrazione cio' che esce dagli altoparlanti (eco del computer)
+    pub echo_cancel: bool,
     /// Controllo e installazione automatica degli aggiornamenti
     pub auto_update: bool,
     /// In debug scrive nel log anche il testo dettato (disattivato di default: e' privato)
@@ -113,6 +116,7 @@ impl Default for Config {
             sounds: true,
             sound_volume: DEFAULT_SOUND_VOLUME as i64,
             sound_style: "soft".into(),
+            echo_cancel: false,
             auto_update: true,
             debug_log_text: false,
             default_prompt: "Fix punctuation and errors in the dictated text without changing its meaning. Reply in the same language as the text.".into(),
@@ -269,6 +273,7 @@ pub fn load() -> Config {
     SOUND_VOLUME.store(clamp_volume(c.sound_volume), Ordering::Relaxed);
     *SOUND_STYLE.lock().unwrap() = c.sound_style.clone();
     AUTO_UPDATE.store(c.auto_update, Ordering::Relaxed);
+    ECHO_CANCEL.store(c.echo_cancel, Ordering::Relaxed);
     c
 }
 
@@ -533,6 +538,16 @@ pub fn adopt_language(wanted: &str) -> bool {
 pub fn set_sound_style(style: &str) {
     *SOUND_STYLE.lock().unwrap() = style.to_string();
     write_toml(|t| set_toml_string(t, "sound_style", style));
+}
+
+pub fn echo_cancel_enabled() -> bool {
+    ECHO_CANCEL.load(Ordering::Relaxed)
+}
+
+/// Attiva/disattiva la rimozione dell'eco del computer e lo scrive in config.toml (`echo_cancel = ...`).
+pub fn set_echo_cancel(on: bool) {
+    ECHO_CANCEL.store(on, Ordering::Relaxed);
+    write_toml(|t| set_toml_bool(t, "echo_cancel", on));
 }
 
 pub fn debug_enabled() -> bool {
@@ -1199,6 +1214,16 @@ mod tests {
         DEBUG.store(true, Ordering::Relaxed);
         TEXT_FLAG.store(false, Ordering::Relaxed);
         assert!(!debug_text_enabled());
+    }
+
+    #[test]
+    fn echo_cancel_is_off_by_default_and_parses() {
+        assert!(!Config::default().echo_cancel);
+        assert!(!example().echo_cancel);
+        let on: Config = toml::from_str("echo_cancel = true").unwrap();
+        assert!(on.echo_cancel);
+        let r = set_toml_bool("a = 1\r\n[[apps]]\r\n", "echo_cancel", true);
+        assert!(r.find("echo_cancel = true").unwrap() < r.find("[[apps]]").unwrap());
     }
 
     #[test]

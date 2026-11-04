@@ -4,7 +4,7 @@
 
 use crate::i18n::{self, t, tf};
 use crate::providers::{self, Provider};
-use crate::{anthropic, backup, config, filepick, localstt, oai, platform, release, sounds, updater, usage};
+use crate::{anthropic, audio, backup, config, filepick, localstt, oai, platform, release, sounds, updater, usage};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
 use std::sync::{Condvar, Mutex, Once};
@@ -126,6 +126,8 @@ fn create_window() -> Result<Ui, slint::PlatformError> {
     win.set_linux(cfg!(target_os = "linux"));
     win.set_autostart(platform::autostart_enabled());
     win.set_sounds(config::sounds_enabled());
+    win.set_echo_available(audio::echo_cancel_available());
+    win.set_echo_cancel(config::echo_cancel_enabled() && audio::echo_cancel_available());
     win.set_sound_volume(config::sound_volume() as f32);
     win.set_sound_style_index(style_index(&config::sound_style()));
     refresh(&win);
@@ -695,6 +697,7 @@ fn wire(win: &SettingsWindow) {
 
     win.on_toggle_overlay(config::set_overlay);
     win.on_toggle_sounds(config::set_sounds);
+    win.on_toggle_echo_cancel(config::set_echo_cancel);
     win.on_toggle_autostart(platform::set_autostart);
     win.on_set_sound_style(|i| {
         let style = sounds::STYLES.get(i.max(0) as usize).copied().unwrap_or(sounds::Style::Soft);
