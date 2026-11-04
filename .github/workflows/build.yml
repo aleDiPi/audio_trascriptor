@@ -127,14 +127,35 @@ jobs:
           flag=""
           if git log -1 --pretty=%B | grep -qF '[installer]'; then flag=" [installer]"; fi
           notes="Versione $ver. Build automatica da main (commit $GITHUB_SHA).$flag"
-          # una release per ogni versione; l'ultima e' quella "Latest" (link di download diretto)
-          gh release create "v$ver" "$setup" "$exe" "$deb" --target "$GITHUB_SHA" --latest --title "Trascrittore audio $ver" --notes "$notes"
+          # GitHub risponde a volte con un errore 502 passeggero: ogni chiamata si ripete fino a 4 volte
+          retry() {
+            for i in 1 2 3 4; do
+              "$@" && return 0
+              echo "tentativo $i non riuscito: $*"
+              sleep $((i * 15))
+            done
+            return 1
+          }
+          # una release per ogni versione; l'ultima e' quella "Latest" (link di download diretto).
+          # Se un tentativo precedente ha lasciato una release a meta' (bozza o senza file) si completa invece di crearne un'altra.
+          publish_version() {
+            if gh release view "v$ver" > /dev/null 2>&1; then
+              gh release upload "v$ver" "$setup" "$exe" "$deb" --clobber &&
+                gh release edit "v$ver" --draft=false --latest --title "Trascrittore audio $ver" --notes "$notes"
+            else
+              gh release create "v$ver" "$setup" "$exe" "$deb" --target "$GITHUB_SHA" --latest --title "Trascrittore audio $ver" --notes "$notes"
+            fi
+          }
+          retry publish_version
           # ponte per le installazioni precedenti, che leggono la release fissa "latest": resta aggiornata sul posto
-          if gh release view latest > /dev/null 2>&1; then
-            gh release upload latest "$setup" "$exe" "$deb" --clobber
-            git tag -f latest "$GITHUB_SHA"
-            git push origin refs/tags/latest --force
-            gh release edit latest --target "$GITHUB_SHA" --latest=false --title "Ponte per versioni precedenti" --notes "$notes"
-          else
-            gh release create latest "$setup" "$exe" "$deb" --target "$GITHUB_SHA" --latest=false --title "Ponte per versioni precedenti" --notes "$notes"
-          fi
+          bridge() {
+            if gh release view latest > /dev/null 2>&1; then
+              gh release upload latest "$setup" "$exe" "$deb" --clobber &&
+                git tag -f latest "$GITHUB_SHA" &&
+                git push origin refs/tags/latest --force &&
+                gh release edit latest --target "$GITHUB_SHA" --latest=false --title "Ponte per versioni precedenti" --notes "$notes"
+            else
+              gh release create latest "$setup" "$exe" "$deb" --target "$GITHUB_SHA" --latest=false --title "Ponte per versioni precedenti" --notes "$notes"
+            fi
+          }
+          retry bridge
