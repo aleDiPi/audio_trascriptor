@@ -17,6 +17,7 @@ pub fn take_peak() -> f32 {
     f32::from_bits(PEAK_BITS.swap(0, Ordering::Relaxed))
 }
 
+#[cfg_attr(not(test), allow(dead_code))] // il flusso audio calcola l'energia da se'
 /// Valore efficace (RMS) di un blocco di campioni in [-1, 1].
 pub fn rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
