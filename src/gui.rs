@@ -148,7 +148,22 @@ fn create_window() -> Result<Ui, slint::PlatformError> {
     });
     check_update_in_background(win.as_weak());
     win.show()?;
+    fit_to_screen(&win);
     Ok(Ui { win, _timer: timer })
+}
+
+/// Shrinks the window to the monitor it is on (DPI-aware); the content scrolls, so nothing is cut off.
+fn fit_to_screen(win: &SettingsWindow) {
+    use slint::winit_030::WinitWindowAccessor;
+    let screen = win.window().with_winit_window(|w| {
+        let m = w.current_monitor().or_else(|| w.primary_monitor())?;
+        let s = m.size();
+        Some(crate::winfit::logical((s.width, s.height), m.scale_factor()))
+    });
+    if let Some(Some(screen)) = screen {
+        let (w, h) = crate::winfit::fit(crate::winfit::preferred(screen), (560.0, 380.0), screen);
+        win.window().set_size(slint::LogicalSize::new(w as f32, h as f32));
+    }
 }
 
 // ---------- language
