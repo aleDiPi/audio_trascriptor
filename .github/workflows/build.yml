@@ -7,7 +7,8 @@ permissions:
   contents: write
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: false
+  # sulle PR una spinta nuova annulla l'esecuzione superata; su main mai (pubblica le release)
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   # Numero di versione AAAA.MM.GG.N, calcolato una volta sola: Windows e Linux partono insieme (in parallelo)
   # e la pubblicazione finale usa lo stesso numero per tutti i file.
@@ -45,18 +46,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # la cache si salva solo da main: le PR la leggono e non perdono minuti a riscriverla
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test
-      - run: cargo build --release
+      - name: Build release (solo su main)
+        if: github.event_name != 'pull_request'
+        run: cargo build --release
       - name: Installer (Inno Setup)
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:TRASCRITTORE_VERSION" installer\trascrittore.iss
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: trascrittore-setup
           path: installer/Output/Trascrittore-Setup.exe
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: trascrittore-windows
           path: |
@@ -74,22 +83,31 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # la cache si salva solo da main: le PR la leggono e non perdono minuti a riscriverla
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Librerie di sviluppo
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libasound2-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev libfontconfig1-dev libxkbcommon-dev cmake clang pkg-config
       - run: cargo test
-      - run: cargo build --release
+      - name: Build release (solo su main)
+        if: github.event_name != 'pull_request'
+        run: cargo build --release
       - uses: taiki-e/install-action@v2
+        if: github.event_name != 'pull_request'
         with:
           tool: cargo-deb
       - name: Pacchetto .deb
+        if: github.event_name != 'pull_request'
         run: cargo deb --no-build --deb-version "$TRASCRITTORE_VERSION" -o trascrittore.deb
       - name: Controllo del pacchetto
+        if: github.event_name != 'pull_request'
         run: |
           dpkg-deb -I trascrittore.deb
           dpkg-deb -c trascrittore.deb
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: trascrittore-linux-deb
           path: trascrittore.deb
