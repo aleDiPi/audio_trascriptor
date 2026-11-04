@@ -1,0 +1,75 @@
+[package]
+name = "trascrittore"
+version = "0.1.0"
+edition = "2021"
+description = "Voice dictation for Windows and Linux: microphone -> Whisper -> AI -> paste at the cursor"
+license-file = "LICENSE"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# whisper.cpp va compilato per la velocita' (con "s" CMake userebbe MinSizeRel, molto piu' lento)
+[profile.release.package.whisper-rs-sys]
+opt-level = 3
+
+[dependencies]
+cpal = "0.18.2"
+hound = "3.5.1"
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "multipart", "native-tls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+toml = "1.1.8"
+tray-icon = "0.26.1"
+
+# whisper.cpp (trascrizione locale) e Slint (impostazioni) sono uguali su Windows e Linux
+whisper-rs = "0.16.0"
+slint = { version = "1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "software-renderer-systemfonts", "compat-1-2", "unstable-winit-030"] }
+argon2 = "0.6.0"
+chacha20poly1305 = "0.11.0"
+base64 = "0.23.1"
+getrandom = "0.4.3"
+zeroize = "1.9.1"
+
+[build-dependencies]
+embed-resource = "3"
+slint-build = "1.18.1"
+toml = "1.1.8"
+
+[target."cfg(windows)".dependencies]
+rfd = { version = "0.17.2", default-features = false }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_HiDpi", "Win32_Media_Audio", "Win32_Globalization"] }
+winreg = "0.56.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# tray-icon su Linux (GTK + AppIndicator) richiede un ciclo GTK; x11rb parla con il server X11 (scorciatoia globale,
+# app in primo piano, tasti simulati); arboard gestisce gli appunti X11.
+gtk = "0.18"
+x11rb = { version = "0.13", features = ["xinput", "xtest"] }
+arboard = { version = "3", default-features = false }
+
+# Pacchetto .deb (cargo deb --no-build, dopo cargo build --release): vedi .github/workflows/build.yml
+[package.metadata.deb]
+name = "trascrittore"
+maintainer = "aleDiPi <noreply@users.noreply.github.com>"
+section = "sound"
+priority = "optional"
+extended-description = "Hold a hotkey, speak, release: the text is transcribed, corrected by an AI service with a prompt suited to the foreground app, and pasted where your cursor is. It lives in the notification area and uses few resources."
+# librerie caricate a runtime (dlopen) che dpkg-shlibdeps non vede
+depends = "$auto, libayatana-appindicator3-1 | libappindicator3-1, libxdo3, libxkbcommon-x11-0, libxcursor1, libxrandr2, libxi6, libfontconfig1, pulseaudio-utils | pipewire-bin | alsa-utils, policykit-1 | polkitd"
+recommends = "zenity, libnotify-bin, libasound2-plugins"
+assets = [
+    ["target/release/trascrittore", "usr/bin/", "755"],
+    ["installer/linux/trascrittore.desktop", "usr/share/applications/", "644"],
+    ["installer/linux/trascrittore-autostart.desktop", "etc/xdg/autostart/trascrittore.desktop", "644"],
+    ["assets/icon-256.png", "usr/share/icons/hicolor/256x256/apps/trascrittore.png", "644"],
+    ["config/config.example.toml", "usr/share/doc/trascrittore/config.example.toml", "644"],
+    ["README.md", "usr/share/doc/trascrittore/README.md", "644"],
+    ["LICENSE", "usr/share/doc/trascrittore/copyright", "644"],
+    ["THIRD_PARTY_NOTICES.md", "usr/share/doc/trascrittore/THIRD_PARTY_NOTICES.md", "644"],
+    ["legal/*", "usr/share/doc/trascrittore/legal/", "644"],
+]

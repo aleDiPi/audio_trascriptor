@@ -1,0 +1,161 @@
+name: Build
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: write
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  # Numero di versione AAAA.MM.GG.N, calcolato una volta sola: Windows e Linux partono insieme (in parallelo)
+  # e la pubblicazione finale usa lo stesso numero per tutti i file.
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Versione AAAA.MM.GG.N
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # data (ora italiana) e numero progressivo del giorno: 2026.10.25.1, 2026.10.25.2, ...
+          day=$(TZ=Europe/Rome date +%Y.%m.%d)
+          n=0
+          for tag in $(gh release list --limit 200 --json tagName --jq '.[].tagName'); do
+            if [[ "$tag" =~ ^v${day//./\\.}\.([0-9]+)$ ]]; then
+              (( BASH_REMATCH[1] > n )) && n=${BASH_REMATCH[1]}
+            fi
+          done
+          ver="$day.$((n + 1))"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Versione $ver"
+
+  build:
+    needs: version
+    runs-on: windows-latest
+    env:
+      TRASCRITTORE_VERSION: ${{ needs.version.outputs.version }}
+      # whisper.cpp (trascrizione locale) genera i binding con libclang, gia' installato sul runner
+      LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+      - run: cargo build --release
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:TRASCRITTORE_VERSION" installer\trascrittore.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trascrittore-setup
+          path: installer/Output/Trascrittore-Setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trascrittore-windows
+          path: |
+            target/release/trascrittore.exe
+            config/config.example.toml
+            .env.example
+
+  # Pacchetto .deb per Linux Mint 22 / Ubuntu 24.04
+  linux:
+    needs: version
+    runs-on: ubuntu-24.04
+    env:
+      TRASCRITTORE_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Librerie di sviluppo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev libfontconfig1-dev libxkbcommon-dev cmake clang pkg-config
+      - run: cargo test
+      - run: cargo build --release
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - name: Pacchetto .deb
+        run: cargo deb --no-build --deb-version "$TRASCRITTORE_VERSION" -o trascrittore.deb
+      - name: Controllo del pacchetto
+        run: |
+          dpkg-deb -I trascrittore.deb
+          dpkg-deb -c trascrittore.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trascrittore-linux-deb
+          path: trascrittore.deb
+
+  # Pubblica la release (solo su main) quando Windows e Linux sono entrambi pronti: un'unica release con tutti i file.
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [version, build, linux]
+    runs-on: ubuntu-24.04
+    env:
+      TRASCRITTORE_VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: trascrittore-setup
+          path: dl/setup
+      - uses: actions/download-artifact@v4
+        with:
+          name: trascrittore-windows
+          path: dl/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: trascrittore-linux-deb
+          path: dl/deb
+      - name: Pubblica la release della versione
+        run: |
+          set -euo pipefail
+          ver="$TRASCRITTORE_VERSION"
+          setup=$(find dl/setup -name Trascrittore-Setup.exe | head -1)
+          exe=$(find dl/windows -name trascrittore.exe | head -1)
+          deb=$(find dl/deb -name trascrittore.deb | head -1)
+          for f in "$setup" "$exe" "$deb"; do test -f "$f" || { echo "file mancante: $f"; exit 1; }; done
+          flag=""
+          if git log -1 --pretty=%B | grep -qF '[installer]'; then flag=" [installer]"; fi
+          notes="Versione $ver. Build automatica da main (commit $GITHUB_SHA).$flag"
+          # GitHub risponde a volte con un errore 502 passeggero: ogni chiamata si ripete fino a 4 volte
+          retry() {
+            for i in 1 2 3 4; do
+              "$@" && return 0
+              echo "tentativo $i non riuscito: $*"
+              sleep $((i * 15))
+            done
+            return 1
+          }
+          # una release per ogni versione; l'ultima e' quella "Latest" (link di download diretto).
+          # Se un tentativo precedente ha lasciato una release a meta' (bozza o senza file) si completa invece di crearne un'altra.
+          publish_version() {
+            if gh release view "v$ver" > /dev/null 2>&1; then
+              gh release upload "v$ver" "$setup" "$exe" "$deb" --clobber &&
+                gh release edit "v$ver" --draft=false --latest --title "Trascrittore audio $ver" --notes "$notes"
+            else
+              gh release create "v$ver" "$setup" "$exe" "$deb" --target "$GITHUB_SHA" --latest --title "Trascrittore audio $ver" --notes "$notes"
+            fi
+          }
+          retry publish_version
+          # ponte per le installazioni precedenti, che leggono la release fissa "latest": resta aggiornata sul posto
+          bridge() {
+            if gh release view latest > /dev/null 2>&1; then
+              gh release upload latest "$setup" "$exe" "$deb" --clobber &&
+                git tag -f latest "$GITHUB_SHA" &&
+                git push origin refs/tags/latest --force &&
+                gh release edit latest --target "$GITHUB_SHA" --latest=false --title "Ponte per versioni precedenti" --notes "$notes"
+            else
+              gh release create latest "$setup" "$exe" "$deb" --target "$GITHUB_SHA" --latest=false --title "Ponte per versioni precedenti" --notes "$notes"
+            fi
+          }
+          retry bridge

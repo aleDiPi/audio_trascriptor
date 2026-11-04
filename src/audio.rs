@@ -1,0 +1,150 @@
+//! Registrazione dal microfono predefinito del sistema al momento dell'avvio.
+
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{FromSample, Sample, SizedSample};
+use std::io::Cursor;
+use std::sync::{Arc, Mutex};
+
+const TARGET_RATE: u32 = 16_000;
+
+pub struct Recorder {
+    stream: cpal::Stream,
+    buf: Arc<Mutex<Vec<f32>>>,
+    rate: u32,
+}
+
+/// Quanti campioni scartare all'inizio per non registrare il suono d'avvio (piu' un piccolo margine
+/// per la latenza degli altoparlanti).
+pub fn frames_to_skip(rate: u32, skip_ms: u32) -> usize {
+    (rate as u64 * skip_ms as u64 / 1000) as usize
+}
+
+/// `skip_ms`: durata iniziale da scartare (il suono d'avvio); 0 per non scartare nulla.
+pub fn start(max_seconds: u32, skip_ms: u32) -> Result<Recorder, String> {
+    let host = cpal::default_host();
+    let device = host.default_input_device().ok_or_else(|| crate::i18n::t("err.no_mic"))?;
+    let cfg = device.default_input_config().map_err(|e| e.to_string())?;
+    crate::config::debug(|| format!("microphone: {:?}, {} Hz, {} channels, {:?}", device.description().map(|d| d.to_string()).unwrap_or_default(), cfg.sample_rate(), cfg.channels(), cfg.sample_format()));
+    let rate: u32 = cfg.sample_rate().into();
+    let channels = cfg.channels() as usize;
+    let max = rate as usize * max_seconds as usize;
+    let skip = frames_to_skip(rate, skip_ms);
+    let buf = Arc::new(Mutex::new(Vec::with_capacity(rate as usize * 10)));
+    let config = cfg.config();
+    let stream = match cfg.sample_format() {
+        cpal::SampleFormat::F32 => build::<f32>(&device, &config, &buf, channels, max, skip),
+        cpal::SampleFormat::I16 => build::<i16>(&device, &config, &buf, channels, max, skip),
+        cpal::SampleFormat::U16 => build::<u16>(&device, &config, &buf, channels, max, skip),
+        cpal::SampleFormat::I32 => build::<i32>(&device, &config, &buf, channels, max, skip),
+        f => Err(crate::i18n::tf("err.audio_format", &[("format", &format!("{f:?}"))])),
+    }?;
+    stream.play().map_err(|e| e.to_string())?;
+    Ok(Recorder { stream, buf, rate })
+}
+
+fn build<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    buf: &Arc<Mutex<Vec<f32>>>,
+    channels: usize,
+    max: usize,
+    skip: usize,
+) -> Result<cpal::Stream, String>
+where
+    T: SizedSample,
+    f32: FromSample<T>,
+{
+    let buf = Arc::clone(buf);
+    let mut skip_left = skip;
+    device
+        .build_input_stream(
+            config.clone(),
+            move |data: &[T], _| {
+                let mut b = buf.lock().unwrap();
+                let (mut energy, mut n) = (0f32, 0usize);
+                for frame in data.chunks(channels) {
+                    if skip_left > 0 {
+                        skip_left -= 1;
+                        continue;
+                    }
+                    if b.len() >= max {
+                        break;
+                    }
+                    let sum: f32 = frame.iter().map(|s| f32::from_sample(*s)).sum();
+                    let v = sum / frame.len() as f32;
+                    energy += v * v;
+                    n += 1;
+                    b.push(v);
+                }
+                if n > 0 {
+                    crate::levels::report((energy / n as f32).sqrt()); // volume per l'alone dell'icona
+                }
+            },
+            |e| crate::config::log(&format!("audio stream error: {e}")),
+            None,
+        )
+        .map_err(|e| e.to_string())
+}
+
+impl Recorder {
+    /// Ferma la registrazione e restituisce un WAV mono 16 kHz, o None se vuoto/silenzioso.
+    pub fn finish(self) -> Option<Vec<u8>> {
+        drop(self.stream);
+        let samples = std::mem::take(&mut *self.buf.lock().unwrap()); // senza copia: libera subito il buffer
+        crate::config::debug(|| format!("recorded {:.1} s of audio", samples.len() as f32 / self.rate as f32));
+        if samples.len() < self.rate as usize / 4 {
+            crate::config::debug(|| "audio too short (under 0.25 s): discarded".into());
+            return None; // meno di 0,25 s
+        }
+        let peak = samples.iter().fold(0f32, |m, s| m.max(s.abs()));
+        crate::config::debug(|| format!("signal peak {peak:.3}"));
+        if peak < 0.005 {
+            crate::config::debug(|| "silent audio (peak < 0.005): discarded, check the system default microphone".into());
+            return None; // silenzio: evita allucinazioni di Whisper
+        }
+        let pcm = resample(&samples, self.rate, TARGET_RATE);
+        let mut cur = Cursor::new(Vec::new());
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: TARGET_RATE,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::new(&mut cur, spec).ok()?;
+        for s in pcm {
+            w.write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16).ok()?;
+        }
+        w.finalize().ok()?;
+        Some(cur.into_inner())
+    }
+}
+
+fn resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
+    if from == to {
+        return input.to_vec();
+    }
+    let ratio = from as f64 / to as f64;
+    let n = (input.len() as f64 / ratio) as usize;
+    (0..n)
+        .map(|i| {
+            let pos = i as f64 * ratio;
+            let idx = pos as usize;
+            let frac = (pos - idx as f64) as f32;
+            let a = input[idx];
+            let b = *input.get(idx + 1).unwrap_or(&a);
+            a + (b - a) * frac
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skip_frames_follow_rate_and_duration() {
+        assert_eq!(frames_to_skip(48_000, 200), 9_600);
+        assert_eq!(frames_to_skip(16_000, 0), 0);
+        assert_eq!(frames_to_skip(44_100, 1000), 44_100);
+    }
+}

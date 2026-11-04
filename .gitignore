@@ -1,0 +1,25 @@
+# --- Sicurezza: segreti e configurazione locale (MAI su GitHub) ---
+.env
+.env.*
+!.env.example
+config.toml
+*.key
+*.pem
+secrets/
+
+# --- File secondari: build, log, registrazioni, appunti personali ---
+/target/
+*.log
+*.log.1
+logs/
+recordings/
+*.wav
+local/
+notes/
+tmp/
+*.bak
+Thumbs.db
+.vscode/
+.idea/
+installer/Output/
+*.deb
