@@ -104,6 +104,32 @@ pub fn open(target: impl AsRef<std::ffi::OsStr>) {
     }
 }
 
+/// Argomenti di `zenity` per una domanda con due pulsanti (il primo e' "OK").
+pub fn zenity_args(title: &str, text: &str, ok_label: &str, cancel_label: &str) -> Vec<String> {
+    vec![
+        "--question".into(),
+        "--no-markup".into(),
+        format!("--title={title}"),
+        format!("--text={text}"),
+        format!("--ok-label={ok_label}"),
+        format!("--cancel-label={cancel_label}"),
+        "--width=420".into(),
+    ]
+}
+
+/// Finestra di avviso con due pulsanti: restituisce true se l'utente sceglie il primo. Usa `zenity` (presente in
+/// Linux Mint); se manca ripiega su una notifica `notify-send` e restituisce false. Blocca finche' la finestra
+/// e' aperta: va chiamata da un thread a parte.
+pub fn ask(title: &str, text: &str, ok_label: &str, cancel_label: &str) -> bool {
+    match std::process::Command::new("zenity").args(zenity_args(title, text, ok_label, cancel_label)).status() {
+        Ok(status) => status.success(),
+        Err(_) => {
+            let _ = std::process::Command::new("notify-send").args([title, text]).status();
+            false
+        }
+    }
+}
+
 // ---------- X11
 
 pub fn connect() -> Result<(RustConnection, Window), String> {
@@ -368,6 +394,16 @@ mod tests {
         let (exe, title) = foreground_app();
         println!("app in primo piano: '{exe}' - '{title}'");
         assert!(!exe.is_empty());
+    }
+
+    #[test]
+    fn zenity_question_has_title_text_and_both_buttons() {
+        let a = zenity_args("Titolo", "Testo\ncon due righe", "Apri", "Chiudi");
+        assert_eq!(a[0], "--question");
+        assert!(a.contains(&"--title=Titolo".to_string()));
+        assert!(a.contains(&"--text=Testo\ncon due righe".to_string()));
+        assert!(a.contains(&"--ok-label=Apri".to_string()) && a.contains(&"--cancel-label=Chiudi".to_string()));
+        assert!(a.contains(&"--no-markup".to_string())); // il testo non va interpretato come markup
     }
 
     #[test]

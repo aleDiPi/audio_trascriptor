@@ -345,7 +345,7 @@ mod tests {
 
     /// Text keys that appear as string literals in a source file, such as "tray.quit" or "err.network".
     fn keys_in(source: &str) -> Vec<String> {
-        const AREAS: [&str; 10] = ["tray", "cfg", "gui", "failure", "status", "usage", "size", "fmt", "err", "gh"];
+        const AREAS: [&str; 11] = ["tray", "cfg", "gui", "failure", "status", "usage", "size", "fmt", "err", "gh", "popup"];
         let mut found = Vec::new();
         for area in AREAS.iter().chain(["ui"].iter()) {
             let start = format!("\"{area}.");

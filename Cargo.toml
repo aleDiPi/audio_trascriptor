@@ -55,7 +55,7 @@ priority = "optional"
 extended-description = "Hold a hotkey, speak, release: the text is transcribed, corrected by an AI service with a prompt suited to the foreground app, and pasted where your cursor is. It lives in the notification area and uses few resources."
 # librerie caricate a runtime (dlopen) che dpkg-shlibdeps non vede
 depends = "$auto, libayatana-appindicator3-1 | libappindicator3-1, libxdo3, libxkbcommon-x11-0, libxcursor1, libxrandr2, libxi6, libfontconfig1, pulseaudio-utils | pipewire-bin | alsa-utils, policykit-1 | polkitd"
-recommends = "libnotify-bin, libasound2-plugins"
+recommends = "zenity, libnotify-bin, libasound2-plugins"
 assets = [
     ["target/release/trascrittore", "usr/bin/", "755"],
     ["installer/linux/trascrittore.desktop", "usr/share/applications/", "644"],
