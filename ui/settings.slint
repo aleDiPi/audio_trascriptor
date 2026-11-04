@@ -83,35 +83,6 @@ component Label inherits Text {
     color: Palette.foreground;
 }
 
-component KeyRow inherits HorizontalLayout {
-    in property <string> placeholder: Tr.paste_key;
-    in property <string> link-text;
-    in property <bool> busy;
-    out property <string> typed: field.text;
-    callback save(string);
-    callback link();
-    callback clear-field();
-    spacing: 8px;
-    field := LineEdit {
-        input-type: password;
-        placeholder-text: root.placeholder;
-        horizontal-stretch: 1;
-    }
-    Button {
-        text: Tr.verify_save;
-        primary: true;
-        enabled: !root.busy;
-        clicked => { root.save(field.text); }
-    }
-    Button {
-        text: root.link-text;
-        clicked => { root.link(); }
-    }
-    in property <int> clear-seq;
-    changed clear-seq => { field.text = ""; }
-}
-
-
 export struct Tile {
     id: string,
     name: string,
@@ -322,9 +293,6 @@ export component SettingsWindow inherits Window {
     property <length> slot: 262px;
     property <int> drag-target: max(0, min(tiles.length - 1, Math.round((drag-idx * slot + drag-dy) / slot)));
     // --- GitHub
-    in property <string> token-status;
-    in property <bool> token-busy;
-    in property <int> token-clear-seq;
     // --- Impostazioni
     in-out property <bool> auto-update;
     in-out property <bool> overlay;
@@ -362,9 +330,6 @@ export component SettingsWindow inherits Window {
     callback cancel-download();
     callback delete-local();
     callback reorder(int, int);
-    callback save-token(string);
-    callback clear-token();
-    callback open-github-link();
     callback toggle-auto-update(bool);
     callback toggle-overlay(bool);
     callback toggle-debug(bool);
@@ -591,21 +556,6 @@ export component SettingsWindow inherits Window {
                             Button { text: Tr.update_now; enabled: !root.upd-busy; clicked => { root.apply-update(); } }
                         }
                         Note { text: root.upd-result; }
-                        Label { text: Tr.github_token_label; }
-                        token-row := KeyRow {
-                            placeholder: "github_pat_...";
-                            link-text: Tr.create_token;
-                            busy: root.token-busy;
-                            clear-seq: root.token-clear-seq;
-                            save(k) => { root.save-token(k); }
-                            link => { root.open-github-link(); }
-                        }
-                        HorizontalLayout {
-                            alignment: start;
-                            Button { text: Tr.remove_token; clicked => { root.clear-token(); } }
-                        }
-                        Note { text: root.token-status; }
-                        Note { text: Tr.token_howto; }
                     }
                     Card { title: Tr.card_log;
                         CheckBox { text: Tr.debug_check; checked: root.debug; toggled => { root.toggle-debug(self.checked); } }

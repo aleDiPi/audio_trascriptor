@@ -3,7 +3,7 @@
 use serde_json::Value;
 use std::fmt;
 
-/// Prefisso obbligatorio dell'URL dell'asset: il token non viene mai inviato altrove.
+/// Prefisso obbligatorio dell'URL dell'asset: gli asset si scaricano solo da qui.
 pub const ASSET_PREFIX: &str = "https://api.github.com/repos/aleDiPi/audio_trascriptor/releases/assets/";
 pub const SETUP_NAME: &str = "Trascrittore-Setup.exe";
 pub const EXE_NAME: &str = "trascrittore.exe";
@@ -98,17 +98,13 @@ pub fn parse_release(json: &str) -> Result<Release, String> {
     })
 }
 
-/// Messaggio d'errore per una risposta non riuscita di GitHub. Su un repository privato GitHub risponde 404
-/// anche quando il token non ha accesso: per distinguere i casi si guarda se il token vede il repository
-/// (`repo_status` = esito di GET /repos/aleDiPi/audio_trascriptor con lo stesso token, se e' stato provato).
-pub fn explain_github_failure(status: u16, repo_status: Option<u16>, api_message: &str) -> String {
+/// Messaggio d'errore per una risposta non riuscita di GitHub (404 = ancora nessuna release pubblicata,
+/// 403 = limite di richieste raggiunto o accesso negato).
+pub fn explain_github_failure(status: u16, api_message: &str) -> String {
     let detail = if api_message.is_empty() { String::new() } else { crate::i18n::tf("gh.detail", &[("message", api_message)]) };
-    let key = match (status, repo_status) {
-        (401, _) | (404 | 403, Some(401)) => "gh.bad_token",
-        (404, Some(200)) => "gh.no_release",
-        (404 | 403, Some(404 | 403)) => "gh.no_access",
-        (403, _) => "gh.forbidden",
-        (404, None) => "gh.not_found",
+    let key = match status {
+        404 => "gh.no_release",
+        403 | 429 => "gh.forbidden",
         _ => "gh.http",
     };
     crate::i18n::tf(key, &[("detail", &detail), ("status", &status.to_string())])
@@ -254,19 +250,15 @@ mod tests {
     }
 
     #[test]
-    fn explains_404_depending_on_repo_access() {
-        // il token vede il repository: la release manca (e' in ricostruzione)
-        let m = explain_github_failure(404, Some(200), "Not Found");
-        assert!(m.contains("valid") && m.contains("try again"), "{m}");
-        // il token non vede il repository: problema di permessi, non di scadenza
-        let m = explain_github_failure(404, Some(404), "Not Found");
-        assert!(m.contains("Resource owner") && m.contains("Contents") && !m.contains("expired"), "{m}");
-        // token rifiutato
-        assert!(explain_github_failure(401, None, "Bad credentials").contains("expired"));
-        assert!(explain_github_failure(404, Some(401), "").contains("expired"));
-        // sonda non eseguita
-        assert!(explain_github_failure(404, None, "").contains("404"));
-        assert!(explain_github_failure(500, None, "").contains("500"));
+    fn explains_github_failures_without_mentioning_tokens() {
+        let m = explain_github_failure(404, "Not Found");
+        assert!(m.contains("No release") && m.contains("try again"), "{m}");
+        assert!(explain_github_failure(403, "rate limit").contains("too many requests"));
+        assert!(explain_github_failure(429, "").contains("too many requests"));
+        assert!(explain_github_failure(500, "").contains("500"));
+        for code in [401, 403, 404, 429, 500] {
+            assert!(!explain_github_failure(code, "x").to_lowercase().contains("token"));
+        }
     }
 
     #[test]

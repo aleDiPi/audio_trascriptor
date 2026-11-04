@@ -14,7 +14,6 @@ use std::time::{Duration, Instant};
 slint::include_modules!();
 include!(concat!(env!("OUT_DIR"), "/tr_apply.rs"));
 
-const GITHUB_TOKEN_URL: &str = "https://github.com/settings/personal-access-tokens/new";
 const REFRESH: Duration = Duration::from_secs(3);
 
 /// Servizi nell'ordine mostrato dalle tessere, con il flag "usato".
@@ -123,7 +122,6 @@ fn create_window() -> Result<Ui, slint::PlatformError> {
     win.set_tiles(ModelRc::new(VecModel::<Tile>::default()));
     win.set_local_size_labels(ModelRc::new(VecModel::from(localstt::SIZES.iter().map(|z| SharedString::from(z.label())).collect::<Vec<_>>())));
     win.set_ver_info(update_info_initial().into());
-    win.set_token_status(token_status().into());
     // i controlli dei suoni si impostano solo qui: aggiornarli col timer sposterebbe il cursore mentre lo si trascina
     win.set_linux(cfg!(target_os = "linux"));
     win.set_autostart(platform::autostart_enabled());
@@ -185,7 +183,6 @@ fn relocalize(win: &SettingsWindow) {
     *CASES.lock().unwrap() = cases;
     win.set_local_size_labels(ModelRc::new(VecModel::from(localstt::SIZES.iter().map(|z| SharedString::from(z.label())).collect::<Vec<_>>())));
     win.set_ver_info(update_info_initial().into());
-    win.set_token_status(token_status().into());
     refresh(win);
 }
 
@@ -509,7 +506,6 @@ fn wire(win: &SettingsWindow) {
             open_url(p.billing_url());
         }
     });
-    win.on_open_github_link(|| open_url(GITHUB_TOKEN_URL));
     win.on_open_log(config::open_log);
     win.on_open_folder(|| {
         platform::open(config::dir());
@@ -744,47 +740,6 @@ fn wire(win: &SettingsWindow) {
         }
     });
 
-    win.on_save_token({
-        let weak = weak.clone();
-        move |typed| {
-            let typed = typed.trim().to_string();
-            if let Some(w) = weak.upgrade() {
-                w.set_token_busy(true);
-                w.set_token_status(t("gui.verifying").into());
-            }
-            let weak = weak.clone();
-            std::thread::spawn(move || {
-                let (msg, update, saved) = verify_and_save_token(typed);
-                let _ = weak.upgrade_in_event_loop(move |w| {
-                    w.set_token_status(norm(&msg).into());
-                    w.set_token_busy(false);
-                    if saved {
-                        w.set_token_clear_seq(w.get_token_clear_seq() + 1);
-                    }
-                    w.set_ver_info(update_info_initial().into());
-                });
-                if let Some(token) = update {
-                    std::thread::sleep(Duration::from_secs(3)); // il tempo di leggere il messaggio
-                    let _ = updater::check_and_apply(&token);
-                }
-            });
-        }
-    });
-
-    win.on_clear_token({
-        let weak = weak.clone();
-        move || {
-            let msg = match config::clear_update_token() {
-                Ok(()) => token_status(),
-                Err(e) => tf("gui.token_remove_failed", &[("err", &e.to_string())]),
-            };
-            if let Some(w) = weak.upgrade() {
-                w.set_token_status(msg.into());
-                w.set_ver_info(update_info_initial().into());
-            }
-        }
-    });
-
     win.on_check_update({
         let weak = weak.clone();
         move || manual_update(weak.clone(), false)
@@ -805,8 +760,8 @@ fn version_line() -> String {
 }
 
 /// Esito del controllo online (senza installare nulla), come testo per la finestra.
-fn update_report(token: &str) -> String {
-    match updater::fetch_latest(token) {
+fn update_report() -> String {
+    match updater::fetch_latest() {
         Ok(r) if release::needs_update(release::current_version(), r.version) => tf(
             "gui.update_available",
             &[
@@ -823,12 +778,6 @@ fn update_report(token: &str) -> String {
 
 /// "Verifica aggiornamenti" (apply = false) e "Aggiorna ora" (apply = true): lavorano in un thread.
 fn manual_update(weak: slint::Weak<SettingsWindow>, apply: bool) {
-    let Some(token) = config::update_token() else {
-        if let Some(w) = weak.upgrade() {
-            w.set_upd_result(t("gui.upd_no_token").into());
-        }
-        return;
-    };
     if let Some(w) = weak.upgrade() {
         w.set_upd_busy(true);
         w.set_upd_result(t("gui.upd_checking").into());
@@ -843,13 +792,13 @@ fn manual_update(weak: slint::Weak<SettingsWindow>, apply: bool) {
                 }
             });
         };
-        let report = update_report(&token);
-        let newer = updater::fetch_latest(&token).map_or(false, |r| release::needs_update(release::current_version(), r.version));
+        let report = update_report();
+        let newer = updater::fetch_latest().map_or(false, |r| release::needs_update(release::current_version(), r.version));
         if apply && newer {
             let how = t(if cfg!(target_os = "linux") { "gui.upd_how_linux" } else { "gui.upd_how_windows" });
             post(tf("gui.upd_installing", &[("report", &report), ("how", &how)]), false);
             std::thread::sleep(Duration::from_secs(3)); // il tempo di leggere il messaggio
-            match updater::check_and_apply(&token) {
+            match updater::check_and_apply() {
                 Ok(_) => post(tf("gui.upd_already", &[("report", &report)]), true),
                 Err(e) => post(tf("gui.upd_failed", &[("report", &report), ("err", &e)]), true),
             }
@@ -859,46 +808,29 @@ fn manual_update(weak: slint::Weak<SettingsWindow>, apply: bool) {
     });
 }
 
-/// Stato del token GitHub.
-fn token_status() -> String {
-    match config::update_token() {
-        Some(tok) => tf("gui.token_saved", &[("token", &config::mask_key(&tok))]),
-        None => t("gui.token_none"),
-    }
-}
-
 /// Stato degli aggiornamenti automatici in una riga.
 fn update_state_line() -> String {
-    t(match (config::update_token().is_some(), config::auto_update_enabled()) {
-        (false, _) => "gui.upd_state_unavailable",
-        (true, false) => "gui.upd_state_off",
-        (true, true) => "gui.upd_state_on",
-    })
+    t(if config::auto_update_enabled() { "gui.upd_state_on" } else { "gui.upd_state_off" })
 }
 
 /// Versione e stato degli aggiornamenti (sezione Info).
 fn update_info_initial() -> String {
-    let state = t(match (config::update_token().is_some(), config::auto_update_enabled()) {
-        (false, _) => "gui.upd_info_unavailable",
-        (true, false) => "gui.upd_info_off",
-        (true, true) => "gui.upd_info_on",
-    });
+    let state = t(if config::auto_update_enabled() { "gui.upd_info_on" } else { "gui.upd_info_off" });
     format!("{}\n{state}", version_line())
 }
 
-/// Se c'e' un token, chiede a GitHub se esiste una versione piu' recente (senza installarla).
+/// Chiede a GitHub se esiste una versione piu' recente (senza installarla).
 fn check_update_in_background(weak: slint::Weak<SettingsWindow>) {
-    let Some(token) = config::update_token() else { return };
     if !config::auto_update_enabled() {
         return;
     }
     std::thread::spawn(move || {
-        let text = update_report(&token);
+        let text = update_report();
         let _ = weak.upgrade_in_event_loop(move |w| w.set_ver_info(text.into()));
     });
 }
 
-// ---------- verifica chiavi e token (rete)
+// ---------- verifica chiavi (rete)
 
 /// Prova la chiave di un servizio elencando i modelli e, se funziona e ne e' stata scritta una nuova, la salva.
 /// Returns the message and whether a new key was saved.
@@ -939,41 +871,6 @@ fn verify_provider(p: Provider, typed: String) -> (String, bool) {
     };
     let msg = tf(if saved { "gui.key_valid_saved" } else { "gui.key_valid" }, &[("name", p.name()), ("lines", &model_lines(&wanted, &ids).join("\n"))]);
     (msg, saved)
-}
-
-/// Prova il token su GitHub e, se funziona e ne e' stato scritto uno nuovo, lo salva in .env.
-/// Returns the message, the token if there is an update to install right now, and whether a new token was saved.
-fn verify_and_save_token(typed: String) -> (String, Option<String>, bool) {
-    let token = if typed.is_empty() {
-        match config::update_token() {
-            Some(t) => t,
-            None => return (t("gui.token_enter"), None, false),
-        }
-    } else {
-        typed.clone()
-    };
-    if token.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return (t("gui.token_no_spaces"), None, false);
-    }
-    let rel = match updater::fetch_latest(&token) {
-        Ok(r) => r,
-        Err(e) => return (tf("gui.token_unusable", &[("err", &e)]), None, false),
-    };
-    let saved = !typed.is_empty();
-    if saved {
-        if let Err(e) = config::save_update_token(&token) {
-            return (tf("gui.token_save_failed", &[("err", &e.to_string())]), None, false);
-        }
-    }
-    let head = t(if saved { "gui.token_valid_saved" } else { "gui.token_valid" });
-    let newer = release::needs_update(release::current_version(), rel.version);
-    if newer && !config::auto_update_enabled() {
-        (tf("gui.token_newer_off", &[("head", &head), ("new", &rel.version.to_string())]), None, saved)
-    } else if newer {
-        (tf("gui.token_newer_on", &[("head", &head), ("new", &rel.version.to_string())]), Some(token), saved)
-    } else {
-        (tf("gui.token_latest", &[("head", &head), ("line", &version_line())]), None, saved)
-    }
 }
 
 #[cfg(test)]

@@ -56,7 +56,7 @@ pub struct Config {
     pub sound_volume: i64,
     /// Tipo di suono: soft, click o chime
     pub sound_style: String,
-    /// Controllo e installazione automatica degli aggiornamenti (serve anche il token GitHub)
+    /// Controllo e installazione automatica degli aggiornamenti
     pub auto_update: bool,
     /// In debug scrive nel log anche il testo dettato (disattivato di default: e' privato)
     pub debug_log_text: bool,
@@ -385,11 +385,6 @@ pub fn save_provider_key(p: crate::providers::Provider, key: &str) -> std::io::R
     save_env_value(p.key_env(), key)
 }
 
-/// Token GitHub di sola lettura per gli aggiornamenti automatici (TRASCRITTORE_UPDATE_TOKEN).
-pub fn update_token() -> Option<String> {
-    env_value("TRASCRITTORE_UPDATE_TOKEN")
-}
-
 /// Sostituisce (o aggiunge) la riga NOME=valore in un testo .env, lasciando il resto invariato.
 pub fn set_env_value(text: &str, name: &str, value: &str) -> String {
     let mut out = Vec::new();
@@ -424,11 +419,6 @@ fn save_env_value(name: &str, value: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Salva il token degli aggiornamenti in .env.
-pub fn save_update_token(token: &str) -> std::io::Result<()> {
-    save_env_value("TRASCRITTORE_UPDATE_TOKEN", token)
-}
-
 /// "gsk_...abcd": mostra solo gli ultimi 4 caratteri.
 pub fn mask_key(key: &str) -> String {
     let tail: String = key.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
@@ -451,11 +441,6 @@ pub fn set_auto_update(on: bool) {
         let _ = std::fs::write(&path, set_toml_bool(&text, "auto_update", on));
     }
     log(&format!("automatic updates {}", if on { "on" } else { "off" }));
-}
-
-/// Cancella il token degli aggiornamenti da .env.
-pub fn clear_update_token() -> std::io::Result<()> {
-    save_update_token("")
 }
 
 /// Il testo dettato va nel log solo con debug attivo E `debug_log_text = true`.
@@ -934,8 +919,8 @@ mod tests {
 
     #[test]
     fn env_value_keeps_other_secrets() {
-        let t = set_env_value("GROQ_API_KEY=gsk_a\r\n", "TRASCRITTORE_UPDATE_TOKEN", "github_pat_x");
-        assert_eq!(t, "GROQ_API_KEY=gsk_a\r\nTRASCRITTORE_UPDATE_TOKEN=github_pat_x\r\n");
+        let t = set_env_value("GROQ_API_KEY=gsk_a\r\n", "OPENAI_API_KEY", "sk_x");
+        assert_eq!(t, "GROQ_API_KEY=gsk_a\r\nOPENAI_API_KEY=sk_x\r\n");
     }
 
     #[test]
@@ -1068,15 +1053,6 @@ mod tests {
     }
 
     #[test]
-    fn installer_token_page_explains_token_creation() {
-        let iss = installer_script();
-        assert!(iss.contains("https://github.com/settings/personal-access-tokens/new"));
-        for needle in ["Only select repositories", "Contents", "Read-only", "aleDiPi/audio_trascriptor", "github_pat_"] {
-            assert!(iss.contains(needle), "manca '{needle}' nella pagina del token");
-        }
-    }
-
-    #[test]
     fn uninstaller_removes_every_leftover() {
         let iss = installer_script();
         assert!(!iss.contains("uninsneveruninstall")); // config e chiavi non devono sopravvivere
@@ -1102,42 +1078,28 @@ mod tests {
     }
 
     #[test]
-    fn empty_env_value_removes_token() {
-        let t = set_env_value("GROQ_API_KEY=abc\nTRASCRITTORE_UPDATE_TOKEN=github_pat_x\n", "TRASCRITTORE_UPDATE_TOKEN", "");
-        assert!(t.contains("GROQ_API_KEY=abc") && t.contains("TRASCRITTORE_UPDATE_TOKEN=\n") || t.contains("TRASCRITTORE_UPDATE_TOKEN=\r\n"));
-        assert!(!t.contains("github_pat_x"));
+    fn empty_env_value_clears_a_key_and_keeps_the_others() {
+        let t = set_env_value("GROQ_API_KEY=abc\nOPENAI_API_KEY=sk_x\n", "OPENAI_API_KEY", "");
+        assert!(t.contains("GROQ_API_KEY=abc") && t.contains("OPENAI_API_KEY=\r\n"), "{t}");
+        assert!(!t.contains("sk_x"));
     }
 
     #[test]
-    fn installer_validates_the_github_token() {
+    fn installer_has_no_github_token_page() {
         let iss = installer_script();
-        for needle in [
-            "WinHttp.WinHttpRequest.5.1",
-            "function NextButtonClick",
-            "api.github.com/repos/aleDiPi/audio_trascriptor/releases/tags/latest",
-            "TokenAskFix",
-        ] {
-            assert!(iss.contains(needle), "manca '{needle}' nella verifica del token");
+        for gone in ["TokenPage", "UPDATE_TOKEN", "personal-access-tokens", "CheckToken", "WinHttp"] {
+            assert!(!iss.contains(gone), "'{gone}' non deve piu' essere nell'installer");
         }
     }
 
     #[test]
-    fn installer_keeps_an_existing_token_and_skips_its_page() {
-        let iss = installer_script();
-        for needle in [
-            "function FindSavedToken",
-            "{commonappdata}\\Trascrittore\\.env",
-            "{userappdata}\\Trascrittore\\.env",
-            "function ShouldSkipPage",
-            "SavedTokenState = 2",
-            "TokenMemoKept",
-            "TokenSavedRejected",
-        ] {
-            assert!(iss.contains(needle), "manca '{needle}' nel controllo del token gia' salvato");
+    fn program_has_no_github_token_left() {
+        // il repository e' pubblico: gli aggiornamenti non usano nessun token
+        for f in ["src/updater.rs", "src/gui.rs", "src/config.rs", "ui/settings.slint", ".env.example", "lang/en.toml", "lang/it.toml"] {
+            let text = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(f)).unwrap();
+            let text = text.split("mod tests").next().unwrap();
+            assert!(!text.contains("UPDATE_TOKEN") && !text.contains("github_pat_") && !text.contains("bearer_auth"), "token residuo in {f}");
         }
-        // il file .env non si sovrascrive mai e il token si scrive solo se l'utente ne ha digitato uno
-        assert!(iss.contains("DestName: \".env\"; Flags: onlyifdoesntexist"));
-        assert!(iss.contains("(Trim(TokenPage.Values[0]) <> '')"));
     }
 
     #[test]
@@ -1158,7 +1120,7 @@ mod tests {
         for part in iss.split("CustomMessage('").skip(1) {
             used.push(part.split('\'').next().unwrap().to_string());
         }
-        assert!(used.len() > 10);
+        assert!(used.len() > 3);
         for lang in &languages {
             let defined: Vec<&str> = iss.lines().filter_map(|l| l.strip_prefix(&format!("{lang}."))).filter_map(|l| l.split('=').next()).collect();
             for u in &used {
