@@ -1,0 +1,107 @@
+Licenza "Source-Available" di Trascrittore Audio, versione 1.0
+
+Copyright (c) 2026 aleDiPi (l'"Autore"). Tutti i diritti riservati, salvo
+quanto espressamente concesso qui sotto.
+
+Questa e' una licenza "source-available" (codice visibile), NON una licenza
+open source. Il codice e' pubblicato perche' chiunque possa leggerlo e
+verificarlo. Non e' pubblicato per essere copiato, riutilizzato o
+ridistribuito.
+
+Traduzione di cortesia dell'originale inglese (file LICENSE). I due testi
+hanno lo stesso valore giuridico; in caso di differenze prevale quello
+inglese.
+
+1. DEFINIZIONI
+
+"Software" indica il codice sorgente, la documentazione, le risorse grafiche
+e i file di traduzione presenti in questo repository. "Binari Ufficiali"
+indica gli eseguibili, gli installer e i pacchetti pubblicati dall'Autore
+nelle Release GitHub di questo repository. "Contributo" indica qualsiasi cosa
+tu invii all'Autore perche' sia inclusa nel Software (codice, traduzioni,
+testi, immagini), per esempio con una pull request.
+
+2. COSA PUOI FARE
+
+a) Leggere. Puoi consultare, leggere, studiare e verificare il Software,
+   online o in una copia strettamente necessaria a questo scopo.
+b) Usare i Binari Ufficiali, gratuitamente e per qualsiasi scopo lecito,
+   personale o commerciale, sui tuoi dispositivi, nel rispetto degli
+   articoli 5 e 6.
+c) Contribuire. Puoi usare le funzioni "fork" e "pull request" di GitHub e
+   tenere una copia di lavoro locale privata, solo per preparare, provare e
+   inviare Contributi (per esempio una nuova traduzione) a questo
+   repository. Una compilazione privata fatta per questo scopo non va
+   condivisa con nessuno.
+
+3. COSA NON PUOI FARE
+
+Senza il permesso scritto preventivo dell'Autore non puoi:
+a) copiare, pubblicare, ospitare, distribuire, concedere in sottolicenza,
+   vendere, noleggiare o rendere in altro modo disponibile il Software, in
+   tutto o in parte, in forma sorgente o binaria, compresi fork modificati,
+   mirror, archivi e compilazioni rimpacchettate;
+b) creare o distribuire opere derivate dal Software, o usarne una parte in un
+   altro progetto, prodotto o servizio;
+c) distribuire tue compilazioni del Software o versioni modificate dei
+   Binari Ufficiali;
+d) usare il Software, o una sua parte, per addestrare, affinare o valutare
+   modelli di apprendimento automatico;
+e) rimuovere o alterare avvisi di copyright, licenza o attribuzione;
+f) usare il nome dell'Autore, il nome del programma o la sua icona per far
+   credere che un prodotto modificato o di terzi sia approvato dall'Autore o
+   provenga da lui.
+
+4. CONTRIBUTI
+
+Inviando un Contributo dichiari di esserne l'autore (o di avere il diritto di
+inviarlo) e concedi all'Autore una licenza perpetua, mondiale, irrevocabile,
+gratuita e non esclusiva, con diritto di sottolicenza, per usare, riprodurre,
+modificare, tradurre, distribuire e rilicenziare il Contributo come parte del
+Software, con questa o con qualsiasi altra licenza. Conservi il copyright sul
+tuo Contributo. L'Autore puo' citare i contributori per nome o soprannome e
+puo' rifiutare o rimuovere qualsiasi Contributo.
+
+5. COMPONENTI E SERVIZI DI TERZI
+
+Il Software e' costruito con componenti di terzi, concessi con le loro
+licenze (vedi THIRD_PARTY_NOTICES.md). Questa licenza non limita alcun
+diritto che hai in base a quelle licenze. Il Software puo' inviare il tuo
+audio e il tuo testo a servizi AI di terzi che scegli e configuri tu;
+l'Autore non gestisce quei servizi e non ne risponde. Leggi
+legal/DISCLAIMER.it.txt e legal/PRIVACY.it.md.
+
+6. NESSUNA GARANZIA
+
+Nei limiti massimi consentiti dalla legge, il Software e i Binari Ufficiali
+sono forniti "COSI' COME SONO", senza garanzie di alcun tipo, esplicite o
+implicite, comprese commerciabilita', idoneita' a uno scopo particolare,
+correttezza delle trascrizioni e non violazione di diritti altrui.
+
+7. LIMITAZIONE DI RESPONSABILITA'
+
+Nei limiti massimi consentiti dalla legge, l'Autore non risponde di danni
+diretti, indiretti, incidentali, speciali o consequenziali, perdita di dati o
+di profitto, costi di servizi di terzi, ne' di pretese derivanti dall'uso del
+Software. Nulla in questa licenza esclude o limita la responsabilita' che non
+puo' essere esclusa o limitata per norma imperativa, in particolare per dolo
+o colpa grave, per morte o lesioni personali, ne' i diritti che la normativa
+imperativa a tutela dei consumatori riconosce ai consumatori.
+
+8. CESSAZIONE
+
+I tuoi diritti derivanti da questa licenza cessano automaticamente se la
+violi. Alla cessazione devi smettere di usare e cancellare ogni copia del
+Software in tuo possesso, salvo quanto la legge ti consente di conservare.
+Gli articoli da 3 a 9 restano validi dopo la cessazione.
+
+9. DISPOSIZIONI GENERALI
+
+Questa licenza e' regolata dalla legge italiana, fatta salva la normativa
+imperativa del Paese in cui vive il consumatore. Il foro competente e'
+stabilito dalle norme imperative applicabili. Se una clausola non e'
+applicabile, le altre restano valide. I diritti non concessi espressamente
+sono riservati.
+
+Per chiedere il permesso di fare qualcosa che questa licenza non consente,
+apri una issue o contatta l'Autore dal profilo GitHub "aleDiPi".
