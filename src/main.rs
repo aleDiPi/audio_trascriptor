@@ -12,6 +12,10 @@ fn main() {
 #[cfg_attr(not(desktop), allow(dead_code))]
 mod i18n;
 #[cfg(desktop)]
+mod backup;
+#[cfg(desktop)]
+mod filepick;
+#[cfg(desktop)]
 mod audio;
 #[cfg(any(desktop, test))]
 #[cfg_attr(not(desktop), allow(dead_code))]

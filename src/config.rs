@@ -215,7 +215,7 @@ pub fn dir() -> &'static Path {
 
 /// Il file con le chiavi e' leggibile solo dal proprietario (Linux).
 #[cfg(unix)]
-fn restrict_permissions(path: &Path) {
+pub(crate) fn restrict_permissions(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
 }

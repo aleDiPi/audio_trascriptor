@@ -345,6 +345,19 @@ export component SettingsWindow inherits Window {
     callback open-folder();
     callback select-prompt(int);
     callback set-language(int);
+    // backup of the settings: dialog 0 = none, 1 = export, 2 = import
+    in-out property <int> dialog;
+    in-out property <string> backup-path;
+    in-out property <string> backup-status;
+    in property <bool> backup-ok;
+    in property <bool> backup-busy;
+    in-out property <bool> import-needs-password;
+    in-out property <string> import-info;
+    in-out property <string> import-pw;
+    callback backup-browse(bool);
+    callback export-settings(string, string, string, bool, bool, bool);
+    callback inspect-import(string);
+    callback import-settings(string, string);
 
 
     HorizontalLayout {
@@ -531,6 +544,16 @@ export component SettingsWindow inherits Window {
                             selected(_) => { root.set-language(self.current-index); }
                         }
                     }
+                    Card { title: Tr.card_backup;
+                        Note { text: Tr.backup_note; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            Button { text: Tr.backup_export; clicked => { root.backup-path = ""; root.backup-status = ""; root.dialog = 1; } }
+                            Button { text: Tr.backup_import; clicked => { root.backup-path = ""; root.backup-status = ""; root.import-pw = ""; root.import-needs-password = false; root.import-info = ""; root.dialog = 2; } }
+                        }
+                        Note { text: root.backup-status; }
+                    }
                     Card { title: Tr.card_config;
                         Note { text: Tr.config_note; }
                         HorizontalLayout {
@@ -577,6 +600,104 @@ export component SettingsWindow inherits Window {
                     }
                     TextEdit { read-only: true; text: root.general-info; min-height: 220px; }
                     Note { text: Tr.slint_note; }
+                }
+            }
+        }
+    }
+
+    // ---------- finestre di esportazione e importazione
+    if root.dialog != 0: Rectangle {
+        x: 0px; y: 0px;
+        width: root.width;
+        height: root.height;
+        background: black.with-alpha(0.45);
+        TouchArea { }
+        Rectangle {
+            width: min(520px, root.width - 40px);
+            height: min(dlg.preferred-height + 40px, root.height - 40px);
+            background: Palette.background;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Palette.foreground.with-alpha(0.25);
+            dlg := VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                alignment: start;
+                if root.dialog == 1: VerticalLayout {
+                    spacing: 10px;
+                    Title { text: Tr.backup_export_title; }
+                    Label { text: Tr.backup_what; }
+                    pf := CheckBox { text: Tr.backup_part_prefs; checked: true; }
+                    pp := CheckBox { text: Tr.backup_part_prompts; checked: true; }
+                    pk := CheckBox { text: Tr.backup_part_keys; checked: true; }
+                    Label { text: Tr.backup_password; }
+                    pw1 := LineEdit { input-type: password; placeholder-text: Tr.backup_password_hint; }
+                    pw2 := LineEdit { input-type: password; placeholder-text: Tr.backup_password_again; enabled: pw1.text != ""; }
+                    Label { text: Tr.backup_file; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        LineEdit { text <=> root.backup-path; horizontal-stretch: 1; }
+                        Button { text: Tr.backup_browse; clicked => { root.backup-browse(true); } }
+                    }
+                    Note { text: root.backup-status; color: root.backup-ok ? Palette.foreground : #d9534f; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        Button { text: Tr.cancel; clicked => { root.dialog = 0; } }
+                        Button {
+                            text: Tr.backup_export;
+                            primary: true;
+                            enabled: !root.backup-busy && (pf.checked || pp.checked || pk.checked);
+                            clicked => { root.export-settings(root.backup-path, pw1.text, pw2.text, pf.checked, pp.checked, pk.checked); }
+                        }
+                    }
+                }
+                if root.dialog == 2: VerticalLayout {
+                    spacing: 10px;
+                    Title { text: Tr.backup_import_title; }
+                    Rectangle {
+                        height: 64px;
+                        border-width: 1px;
+                        border-color: Palette.foreground.with-alpha(0.4);
+                        border-radius: 6px;
+                        Text {
+                            text: Tr.backup_drop;
+                            color: Palette.foreground.with-alpha(0.75);
+                            font-size: 13px;
+                            wrap: word-wrap;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width - 16px;
+                        }
+                    }
+                    Label { text: Tr.backup_file; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        LineEdit {
+                            text <=> root.backup-path;
+                            horizontal-stretch: 1;
+                            accepted(_) => { root.inspect-import(self.text); }
+                        }
+                        Button { text: Tr.backup_browse; clicked => { root.backup-browse(false); } }
+                    }
+                    Note { text: root.import-info; }
+                    if root.import-needs-password: VerticalLayout {
+                        spacing: 6px;
+                        Label { text: Tr.backup_password_ask; }
+                        LineEdit { input-type: password; text <=> root.import-pw; accepted(t) => { root.import-settings(root.backup-path, t); } }
+                    }
+                    Note { text: root.backup-status; color: root.backup-ok ? Palette.foreground : #d9534f; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        Button { text: Tr.cancel; clicked => { root.dialog = 0; } }
+                        Button {
+                            text: Tr.backup_import;
+                            primary: true;
+                            enabled: !root.backup-busy && root.backup-path != "";
+                            clicked => { root.import-settings(root.backup-path, root.import-needs-password ? root.import-pw : ""); }
+                        }
+                    }
                 }
             }
         }

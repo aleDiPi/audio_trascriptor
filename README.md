@@ -10,6 +10,8 @@ It starts minimized in the tray (no window) and uses very little RAM/CPU when id
 
 **Languages:** the interface is available in English and Italian. The language follows the system language; you can change it in the installer (Windows) and at any time in *Settings > Language* (this is also how you change it on Linux, where there is no installer). Anyone can add a language by adding one text file: see [CONTRIBUTING.md](CONTRIBUTING.md) and the `lang/` folder.
 
+**Export / import settings:** *Settings > Export / import settings*. *Export* lets you choose what to save (preferences, prompts, AI service keys) and an optional password; with a password the file is encrypted (Argon2id key derivation + XChaCha20-Poly1305), without it the file is plain text and contains your keys in clear: keep it private. *Import* takes the file (Browse, or drag it onto the window) and asks for the password if the file is encrypted; the previous `config.toml` is kept as `config.toml.bak`. The GitHub update token is never exported. On Linux the Browse button needs `zenity` or `kdialog`; otherwise type the path.
+
 ## Folder layout
 
 | Kind | Files | On GitHub |
