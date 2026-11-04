@@ -1,5 +1,5 @@
-//! Aggiornamenti automatici dalla release "latest" del repository privato (richiede il token in .env).
-//! Il token e l'installer scaricato passano solo da api.github.com / dal download firmato da GitHub.
+//! Aggiornamenti automatici dall'ultima release pubblica del repository (nessun token: il repository e' pubblico).
+//! L'installer scaricato viene eseguito solo se il suo SHA-256 coincide con quello dichiarato da GitHub.
 
 use crate::release::{self, Asset, Release};
 #[cfg(windows)]
@@ -22,18 +22,10 @@ fn client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Esito (HTTP) di GET /repos/aleDiPi/audio_trascriptor con il token: dice se il token vede il repository.
-fn repo_status(token: &str) -> Option<u16> {
-    let url = API.split("/releases/").next()?;
-    let resp = client().ok()?.get(url).bearer_auth(token).header("Accept", "application/vnd.github+json").send().ok()?;
-    Some(resp.status().as_u16())
-}
-
-/// Legge la release "latest". Se GitHub risponde con un errore dice se dipende dal token o dalla release.
-pub fn fetch_latest(token: &str) -> Result<Release, String> {
+/// Legge l'ultima release pubblica.
+pub fn fetch_latest() -> Result<Release, String> {
     let resp = client()?
         .get(API)
-        .bearer_auth(token)
         .header("Accept", "application/vnd.github+json")
         .send()
         .map_err(|e| crate::i18n::tf("err.network", &[("msg", &e.to_string())]))?;
@@ -41,19 +33,17 @@ pub fn fetch_latest(token: &str) -> Result<Release, String> {
     let body = resp.text().map_err(|e| e.to_string())?;
     if !status.is_success() {
         let code = status.as_u16();
-        let repo = if matches!(code, 403 | 404) { repo_status(token) } else { None };
-        let msg = release::explain_github_failure(code, repo, &release::api_message(&body));
-        config::log(&format!("update check: HTTP {code}, repository HTTP {repo:?}"));
+        let msg = release::explain_github_failure(code, &release::api_message(&body));
+        config::log(&format!("update check: HTTP {code}"));
         return Err(msg);
     }
     release::parse_release(&body)
 }
 
 /// Scarica un asset e ne verifica lo SHA-256 con quello dichiarato da GitHub.
-fn download(token: &str, asset: &Asset) -> Result<Vec<u8>, String> {
+fn download(asset: &Asset) -> Result<Vec<u8>, String> {
     let resp = client()?
         .get(&asset.url)
-        .bearer_auth(token) // reqwest toglie l'header sul redirect verso un altro host
         .header("Accept", "application/octet-stream")
         .send()
         .map_err(|e| crate::i18n::tf("err.network", &[("msg", &e.to_string())]))?;
@@ -70,8 +60,8 @@ fn download(token: &str, asset: &Asset) -> Result<Vec<u8>, String> {
 #[cfg(windows)]
 /// Aggiornamento in-place: scarica solo l'eseguibile, rinomina quello in uso (Windows lo permette),
 /// mette il nuovo al suo posto e riavvia. Se qualcosa va storto il vecchio eseguibile resta al suo posto.
-fn swap_in_place(token: &str, rel: &Release) -> Result<(), String> {
-    let bytes = download(token, &rel.exe)?;
+fn swap_in_place(rel: &Release) -> Result<(), String> {
+    let bytes = download(&rel.exe)?;
     let cur = std::env::current_exe().map_err(|e| e.to_string())?;
     let (new, old) = (cur.with_extension("exe.new"), cur.with_extension("exe.old"));
     std::fs::write(&new, &bytes).map_err(|e| crate::i18n::tf("err.write_file", &[("path", &new.display().to_string()), ("err", &e.to_string())]))?;
@@ -93,8 +83,8 @@ fn swap_in_place(token: &str, rel: &Release) -> Result<(), String> {
 
 #[cfg(windows)]
 /// Aggiornamento con l'installer completo, in silenzio (modifiche strutturali o scambio in-place fallito).
-fn run_setup(token: &str, rel: &Release) -> Result<(), String> {
-    let bytes = download(token, &rel.setup)?;
+fn run_setup(rel: &Release) -> Result<(), String> {
+    let bytes = download(&rel.setup)?;
     let dir = std::env::temp_dir().join("Trascrittore-Update");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(release::SETUP_NAME);
@@ -112,9 +102,9 @@ pub fn apt_install_args(deb: &std::path::Path) -> Vec<String> {
 /// Aggiornamento su Linux: scarica il .deb della release, ne verifica lo SHA-256 e lo installa con apt (pkexec).
 /// Poi riavvia il programma. Se l'utente annulla la richiesta della password non cambia nulla.
 #[cfg(target_os = "linux")]
-fn install_deb(token: &str, rel: &Release) -> Result<(), String> {
+fn install_deb(rel: &Release) -> Result<(), String> {
     let asset = rel.deb.as_ref().ok_or_else(|| crate::i18n::t("err.deb_missing"))?;
-    let bytes = download(token, asset)?;
+    let bytes = download(asset)?;
     let dir = std::env::temp_dir().join("Trascrittore-Update");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(release::DEB_NAME);
@@ -137,8 +127,8 @@ fn install_deb(token: &str, rel: &Release) -> Result<(), String> {
 }
 
 /// Controlla subito; se c'e' una versione piu' recente la installa. Ok(false) = gia' aggiornato.
-pub fn check_and_apply(token: &str) -> Result<bool, String> {
-    let rel = fetch_latest(token)?;
+pub fn check_and_apply() -> Result<bool, String> {
+    let rel = fetch_latest()?;
     config::debug(|| format!("updates: online {}, installed {}", rel.version, release::current_version().map_or("local build".to_string(), |v| v.to_string())));
     if !release::needs_update(release::current_version(), rel.version) {
         return Ok(false);
@@ -153,7 +143,7 @@ pub fn check_and_apply(token: &str) -> Result<bool, String> {
     config::log(&format!("updating to version {}", rel.version));
     #[cfg(target_os = "linux")]
     {
-        install_deb(token, &rel)?;
+        install_deb(&rel)?;
         Ok(true)
     }
     #[cfg(windows)]
@@ -163,12 +153,12 @@ pub fn check_and_apply(token: &str) -> Result<bool, String> {
             config::debug(|| "program folder not writable (Program Files): using the installer".into());
         }
         if !rel.installer_required && exe_dir_writable {
-            match swap_in_place(token, &rel) {
+            match swap_in_place(&rel) {
                 Ok(()) => {}
                 Err(e) => config::log(&format!("in-place update failed, using the installer: {e}")),
             }
         }
-        run_setup(token, &rel)?;
+        run_setup(&rel)?;
         Ok(true)
     }
 }
@@ -181,7 +171,7 @@ fn notify_update(version: release::Version) {
         .spawn();
 }
 
-/// Thread in background: controlla poco dopo l'avvio e poi ogni 6 ore. Senza token non fa nulla.
+/// Thread in background: controlla poco dopo l'avvio e poi ogni 6 ore.
 /// Su Linux l'installazione richiede la password (pkexec): il controllo automatico si limita ad avvisare con una
 /// notifica; si installa da Impostazioni > Info > "Aggiorna ora".
 pub fn start_background() {
@@ -191,20 +181,18 @@ pub fn start_background() {
         let mut notified: Option<release::Version> = None;
         loop {
             if release::current_version().is_some() && config::auto_update_enabled() {
-                if let Some(token) = config::update_token() {
-                    #[cfg(windows)]
-                    if let Err(e) = check_and_apply(&token) {
-                        config::log(&format!("update check: {e}"));
+                #[cfg(windows)]
+                if let Err(e) = check_and_apply() {
+                    config::log(&format!("update check: {e}"));
+                }
+                #[cfg(target_os = "linux")]
+                match fetch_latest() {
+                    Ok(r) if release::needs_update(release::current_version(), r.version) && notified != Some(r.version) => {
+                        notified = Some(r.version);
+                        notify_update(r.version);
                     }
-                    #[cfg(target_os = "linux")]
-                    match fetch_latest(&token) {
-                        Ok(r) if release::needs_update(release::current_version(), r.version) && notified != Some(r.version) => {
-                            notified = Some(r.version);
-                            notify_update(r.version);
-                        }
-                        Ok(_) => {}
-                        Err(e) => config::log(&format!("update check: {e}")),
-                    }
+                    Ok(_) => {}
+                    Err(e) => config::log(&format!("update check: {e}")),
                 }
             }
             std::thread::sleep(Duration::from_secs(6 * 3600));

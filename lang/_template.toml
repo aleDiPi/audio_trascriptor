@@ -17,8 +17,6 @@ nav_prompt = ""
 nav_settings = ""
 # Info
 nav_info = ""
-# Paste the key
-paste_key = ""
 # Paste the API key
 paste_api_key = ""
 # Verify and save
@@ -107,20 +105,12 @@ open_config = ""
 card_ver = ""
 # Updates
 card_updates = ""
-# Automatic updates on (needs the GitHub token)
+# Automatic updates on
 auto_update_check = ""
 # Check for updates
 check_updates = ""
 # Update now
 update_now = ""
-# GitHub token (paste it here to set or change it)
-github_token_label = ""
-# Create token
-create_token = ""
-# Remove token
-remove_token = ""
-# How to create it: "Create token" opens the page. Choose Resource owner aleDiPi, Repository access only audio_trascriptor and Permissions > Contents = Read-only. Copy the token (it starts with github_pat_) and paste it here.
-token_howto = ""
 # Log and diagnostics
 card_log = ""
 # Debug mode: writes every step to the log (never keys or tokens)
@@ -247,8 +237,6 @@ key_removed = ""
 key_remove_failed = ""
 # Verifying...
 verifying = ""
-# Could not remove the token: {err}
-token_remove_failed = ""
 # local build
 build_local = ""
 # build {id}
@@ -265,8 +253,6 @@ update_local_build = ""
 update_current = ""
 # {line}\nUpdate check failed: {err}
 update_check_failed = ""
-# No GitHub token: enter it below, or download the new installer by hand from the Releases page.
-upd_no_token = ""
 # Checking...
 upd_checking = ""
 # a password prompt will appear
@@ -279,18 +265,10 @@ upd_installing = ""
 upd_already = ""
 # {report}\nUpdate failed: {err}
 upd_failed = ""
-# Saved token: {token}. To change it, paste the new one and press "Verify and save".
-token_saved = ""
-# No saved token: automatic updates are not available. Paste a token above ("Create token" opens the page), or update by hand by downloading the new installer from the Releases page.
-token_none = ""
-# Automatic updates: not available (no GitHub token).
-upd_state_unavailable = ""
 # Automatic updates: off.
 upd_state_off = ""
 # Automatic updates: on.
 upd_state_on = ""
-# Automatic updates: not available (no GitHub token). To update, download the new installer by hand from the Releases page.
-upd_info_unavailable = ""
 # Automatic updates: OFF (turn them on below).
 upd_info_off = ""
 # Automatic updates: on. Checking...
@@ -309,24 +287,6 @@ key_save_failed = ""
 key_valid = ""
 # {name} key valid and saved.\n{lines}
 key_valid_saved = ""
-# Enter the GitHub token (see the README).
-token_enter = ""
-# The token must not contain spaces.
-token_no_spaces = ""
-# Token not usable.\n{err}
-token_unusable = ""
-# The token works but could not be saved: {err}
-token_save_failed = ""
-# Token valid. Automatic updates on.
-token_valid = ""
-# Token valid and saved. Automatic updates on.
-token_valid_saved = ""
-# {head}\nThere is a newer version ({new}), but automatic updates are off: tick the box above, or use "Update now".
-token_newer_off = ""
-# {head}\nNewer online version {new}: downloading it and restarting the program in a few seconds.
-token_newer_on = ""
-# {head}\n{line}\nYou already have the latest version.
-token_latest = ""
 
 [failure]
 # out of credit
@@ -461,15 +421,9 @@ restart = ""
 [gh]
 #  (GitHub: "{message}")
 detail = ""
-# GitHub does not accept the token (wrong, revoked or expired){detail}.
-bad_token = ""
-# The token is valid and sees the repository, but no release has been published yet (publishing takes a couple of minutes after every change): try again later{detail}.
+# No release has been published yet (publishing takes a couple of minutes after every change): try again later{detail}.
 no_release = ""
-# The token does not see the repository aleDiPi/audio_trascriptor: on the creation page check Resource owner = aleDiPi, Repository access = only audio_trascriptor and Permissions > Contents = Read-only.{detail}
-no_access = ""
 # GitHub denies access (insufficient permissions or too many requests){detail}.
 forbidden = ""
-# GitHub HTTP 404: release not found or token without access to the repository{detail}.
-not_found = ""
 # GitHub HTTP {status}{detail}.
 http = ""

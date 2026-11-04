@@ -18,14 +18,14 @@ Versione 1.0 - Versione inglese: [PRIVACY.en.md](PRIVACY.en.md). Le due versioni
 | Testo dettato, all'incolla | Messo temporaneamente negli appunti di sistema per incollarlo dove hai il cursore, poi viene ripristinato il contenuto precedente (se `restore_clipboard = true`). | Resta sul tuo PC. Eventuali gestori degli appunti installati sul PC possono conservarne una copia. |
 | Nome e titolo della finestra in primo piano | Letti in locale per scegliere il prompt adatto. | Restano sul tuo PC. |
 | Impostazioni (`config.toml`) | File locale. | Restano sul tuo PC. |
-| Chiavi API ed eventuale token GitHub (`.env`) | File locale in **testo semplice**. Proteggi il PC di conseguenza. Mai scritte nei log. | Inviate solo al servizio corrispondente, per autenticarti. |
+| Chiavi API (`.env`) | File locale in **testo semplice**. Proteggi il PC di conseguenza. Mai scritte nei log. | Inviate solo al servizio corrispondente, per autenticarti. |
 | File di log | Errori ed eventi di avvio. Con la modalita' debug piu' dettagli; il testo dettato e' scritto **solo** se attivi anche `debug_log_text`. Due file da 512 KB al massimo. | Restano sul tuo PC. Disattivando il debug, o disinstallando, i log vengono cancellati. |
 | Modelli Whisper locali | Scaricati solo se lo chiedi. | Salvati sul tuo PC. |
 
 ## Connessioni di rete
 
 1. **Servizi AI configurati da te**: `api.groq.com`, `api.openai.com`, `api.anthropic.com` (HTTPS). Solo quelli che hanno una chiave, nell'ordine che hai scelto.
-2. **GitHub** (`api.github.com`): controllo e download degli aggiornamenti, solo se hai salvato un token di aggiornamento o chiedi un aggiornamento. GitHub vede il tuo indirizzo IP e il token, secondo l'[informativa di GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+2. **GitHub** (`api.github.com`): controllo degli aggiornamenti (ogni 6 ore, salvo che tu spenga gli aggiornamenti automatici) e download della nuova versione. Non si usa nessun account ne' token. GitHub vede il tuo indirizzo IP, secondo l'[informativa di GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
 3. **Hugging Face** (`huggingface.co`): download di un modello Whisper, solo quando premi il pulsante di download.
 
 Non vengono fatte altre connessioni. Il programma non apre porte in ascolto.

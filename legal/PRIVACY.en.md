@@ -18,14 +18,14 @@ Version 1.0 - Italian version: [PRIVACY.it.md](PRIVACY.it.md). The two versions 
 | Dictated text, on paste | Placed temporarily in the system clipboard to paste it at the cursor, then the previous clipboard content is restored (if `restore_clipboard = true`). | Stays on your PC. Clipboard managers installed on your PC may keep a copy. |
 | Name and window title of the foreground app | Read locally to choose the matching prompt. | Stays on your PC. |
 | Settings (`config.toml`) | Local file. | Stays on your PC. |
-| API keys and optional GitHub token (`.env`) | Local **plain text** file. Protect your PC accordingly. Never logged. | Sent only to the matching service, as authentication. |
+| API keys (`.env`) | Local **plain text** file. Protect your PC accordingly. Never logged. | Sent only to the matching service, as authentication. |
 | Log file | Errors and start-up events. With debug mode on, more details; the dictated text is logged **only** if you also enable `debug_log_text`. Two files of at most 512 KB. | Stays on your PC. Turning debug off, or uninstalling, deletes the logs. |
 | Local Whisper models | Downloaded only if you ask for it. | Stored on your PC. |
 
 ## Network connections
 
 1. **AI services you configure**: `api.groq.com`, `api.openai.com`, `api.anthropic.com` (HTTPS). Only the services that have a key, in the order you set.
-2. **GitHub** (`api.github.com`): update check and download, only if you saved an update token or ask for an update. GitHub sees your IP address and the token, under [GitHub's privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+2. **GitHub** (`api.github.com`): update check (every 6 hours, unless you turn automatic updates off) and download of the new version. No account or token is used. GitHub sees your IP address, under [GitHub's privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
 3. **Hugging Face** (`huggingface.co`): download of a Whisper model, only when you press the download button.
 
 No other connection is made. The program opens no listening ports.
