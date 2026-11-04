@@ -1,0 +1,42 @@
+AVVISO IMPORTANTE - LEGGERE ATTENTAMENTE
+
+Trascrittore Audio trasforma la tua voce in testo. Per farlo puo' inviare la
+registrazione della tua voce e il testo trascritto a servizi AI di terzi che
+scegli e configuri tu, con il tuo account e la tua chiave API: Groq, OpenAI e
+Anthropic. Puo' anche trascrivere sul tuo PC con un modello Whisper locale; nulla
+lascia il tuo computer solo se lasci vuote tutte le chiavi AI.
+
+1. SERVIZI AI DI TERZI. Quello che invii a questi servizi viene trattato da
+   loro, secondo i loro termini e le loro informative privacy, non
+   dall'Autore di questo programma. L'Autore NON controlla e NON garantisce
+   come questi servizi conservano, trattengono, usano (per esempio per
+   migliorare o addestrare i loro modelli), condividono o proteggono i tuoi
+   dati, ne' in quale parte del mondo li trattano (di solito hanno sede fuori
+   dall'Unione Europea). Leggi i loro termini prima di usarli e scegli
+   impostazioni e piani di conseguenza.
+
+2. CONTENUTI SENSIBILI. Non dettare password, dati sanitari, dati finanziari,
+   segreti aziendali o altri dati riservati o personali, tuoi o di altre
+   persone, a meno che il servizio scelto sia adatto e tu abbia il diritto di
+   inviarli. Se usi il programma al lavoro, controlla prima le regole della
+   tua organizzazione. Per la massima riservatezza scarica un modello Whisper
+   locale e lascia vuote tutte le chiavi AI.
+
+3. ALTRE PERSONE. Non registrare ne' trascrivere la voce di altre persone
+   senza il consenso o altra base giuridica richiesti dalla legge del tuo
+   Paese.
+
+4. L'USO E' SOTTO LA TUA RESPONSABILITA'. Sei responsabile dei contenuti che
+   detti, delle tue chiavi API (conservate in un file di testo semplice sul
+   tuo PC), dei costi addebitati dai servizi che usi e della verifica di ogni
+   trascrizione e testo corretto dall'AI prima di fidartene. L'AI puo'
+   sbagliare.
+
+5. NESSUNA GARANZIA. Il programma e' fornito "cosi' com'e'" e gratuitamente,
+   senza alcuna garanzia, come previsto dalla licenza (LICENSE). Nei limiti
+   consentiti dalla legge, l'Autore non risponde dei danni derivanti dal suo
+   uso o dai servizi di terzi a cui si collega. Questo non limita i diritti
+   che la legge non consente di limitare.
+
+Il programma non raccoglie telemetria e l'Autore non riceve alcun tuo dato.
+Dettagli: legal/PRIVACY.it.md. Questo avviso non e' una consulenza legale.

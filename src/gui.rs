@@ -90,6 +90,7 @@ fn create_window() -> Result<Ui, slint::PlatformError> {
     let cfg = config::load();
     apply_ui_texts(&win, &t);
     set_language_list(&win, &cfg.ui_language);
+    set_legal_texts(&win);
 
     *LAYOUT.lock().unwrap() = initial_layout(&cfg.providers);
     *TILE_UI.lock().unwrap() = providers::ALL.iter().map(|p| (*p, String::new(), false, 0)).collect();
@@ -144,11 +145,19 @@ fn set_language_list(win: &SettingsWindow, setting: &str) {
     win.set_lang_names(ModelRc::new(VecModel::from(choices.into_iter().map(|(_, n)| SharedString::from(n)).collect::<Vec<_>>())));
 }
 
+/// Legal notice and license in the language in use (English if there is no translation).
+fn set_legal_texts(win: &SettingsWindow) {
+    let lang = i18n::current();
+    win.set_legal_disclaimer(norm(crate::legal::disclaimer(&lang)).into());
+    win.set_legal_license(norm(crate::legal::license(&lang)).into());
+}
+
 /// After a language change: rewrites every text of the open window.
 fn relocalize(win: &SettingsWindow) {
     let cfg = config::load();
     apply_ui_texts(win, &t);
     set_language_list(win, &cfg.ui_language);
+    set_legal_texts(win);
     let cases = cfg.prompt_cases();
     win.set_prompt_titles(ModelRc::new(VecModel::from(cases.iter().map(|(t, _)| SharedString::from(t.as_str())).collect::<Vec<_>>())));
     win.set_prompt_text(cases.first().map(|(_, t)| norm(t)).unwrap_or_default().into());

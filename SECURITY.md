@@ -16,4 +16,5 @@
 - Audio e testo vengono inviati solo ai servizi AI che configuri (`api.groq.com`, `api.openai.com`, `api.anthropic.com`, in HTTPS). Nessuna registrazione viene salvata su disco.
 - Il programma non apre porte di rete e non invia telemetria.
 - Il testo negli appunti viene sostituito solo per il tempo dell'incolla e poi ripristinato (se `restore_clipboard = true`).
+- Informativa privacy e avvisi legali: cartella `legal/`.
 - Per segnalare un problema di sicurezza apri una issue privata su GitHub.

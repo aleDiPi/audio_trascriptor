@@ -348,6 +348,8 @@ export component SettingsWindow inherits Window {
     // --- Info
     in property <string> ver-info;
     in property <string> general-info;
+    in property <string> legal-disclaimer;
+    in property <string> legal-license;
 
     callback save-key(string, string);
     callback remove-key(string);
@@ -616,6 +618,12 @@ export component SettingsWindow inherits Window {
                         }
                         Note { text: root.log-line; }
                         Note { text: Tr.debug_off_note; }
+                    }
+                    Card { title: Tr.card_legal;
+                        Label { text: Tr.legal_disclaimer; }
+                        TextEdit { read-only: true; text: root.legal-disclaimer; min-height: 200px; }
+                        Label { text: Tr.legal_license; }
+                        TextEdit { read-only: true; text: root.legal-license; min-height: 200px; }
                     }
                     TextEdit { read-only: true; text: root.general-info; min-height: 220px; }
                     Note { text: Tr.slint_note; }

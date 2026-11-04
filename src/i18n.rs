@@ -209,6 +209,11 @@ pub fn languages() -> Vec<(String, String)> {
     active().all.iter().map(|c| (c.code.clone(), c.name.clone())).collect()
 }
 
+/// Code of the language in use.
+pub fn current() -> String {
+    active().primary.code.clone()
+}
+
 /// Entries of the language list in the settings: ("auto", automatic) followed by every language as (code, name).
 pub fn choices(langs: &[(String, String)], auto_label: &str) -> Vec<(String, String)> {
     std::iter::once(("auto".to_string(), auto_label.to_string())).chain(langs.iter().cloned()).collect()

@@ -133,6 +133,12 @@ open_log = ""
 debug_off_note = ""
 # Interface built with Slint (royalty-free license for desktop applications, https://slint.dev).
 slint_note = ""
+# Legal notice and license
+card_legal = ""
+# Third-party AI services and privacy
+legal_disclaimer = ""
+# License (the English text prevails)
+legal_license = ""
 # Automatic (system language)
 language_auto = ""
 

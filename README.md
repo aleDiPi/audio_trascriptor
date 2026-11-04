@@ -201,3 +201,18 @@ While you hold the hotkey, a dark circle appears at the bottom right (on the scr
 - **Updates**: the new `.exe` is downloaded next to the old one and the `.old` file is deleted at the next restart; any installer downloaded to `%TEMP%\Trascrittore-Update` is deleted at the next startup.
 - **Usage counters**: they are in memory (a few lines per model) and reset on exit.
 - At rest the program does nothing (tray icon and an update check every 6 hours, if you have the token); the settings window exists only while it is open.
+
+## License and legal notes
+
+The code is **readable but not reusable** (source-available): you may read it and use the programs published in the Releases for free; you may not copy it, redistribute it or make derivative works. Contributions (for example new languages) are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+| | English | Italiano |
+|---|---|---|
+| License | [LICENSE](LICENSE) | [LICENSE.it.txt](legal/LICENSE.it.txt) |
+| Privacy notice | [PRIVACY.en.md](legal/PRIVACY.en.md) | [PRIVACY.it.md](legal/PRIVACY.it.md) |
+| Notice about third-party AI services | [DISCLAIMER.en.txt](legal/DISCLAIMER.en.txt) | [DISCLAIMER.it.txt](legal/DISCLAIMER.it.txt) |
+| Third-party components | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | |
+
+**Important:** Groq, OpenAI and Anthropic process the data you send under their own terms; the Author does not guarantee how they handle it. These texts are not legal advice.
+
+<a href="https://slint.dev"><img src="https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png" alt="Made with Slint" height="48"></a>

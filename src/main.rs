@@ -26,6 +26,9 @@ mod anthropic;
 #[cfg(any(desktop, test))]
 #[cfg_attr(not(desktop), allow(dead_code))]
 mod providers;
+#[cfg(any(desktop, test))]
+#[cfg_attr(not(desktop), allow(dead_code))]
+mod legal;
 #[cfg(desktop)]
 mod gui;
 #[cfg(windows)]

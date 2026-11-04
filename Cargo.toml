@@ -3,7 +3,7 @@ name = "trascrittore"
 version = "0.1.0"
 edition = "2021"
 description = "Voice dictation for Windows and Linux: microphone -> Whisper -> AI -> paste at the cursor"
-license = "MIT"
+license-file = "LICENSE"
 
 [profile.release]
 opt-level = "s"
@@ -63,4 +63,7 @@ assets = [
     ["assets/icon-256.png", "usr/share/icons/hicolor/256x256/apps/trascrittore.png", "644"],
     ["config/config.example.toml", "usr/share/doc/trascrittore/config.example.toml", "644"],
     ["README.md", "usr/share/doc/trascrittore/README.md", "644"],
+    ["LICENSE", "usr/share/doc/trascrittore/copyright", "644"],
+    ["THIRD_PARTY_NOTICES.md", "usr/share/doc/trascrittore/THIRD_PARTY_NOTICES.md", "644"],
+    ["legal/*", "usr/share/doc/trascrittore/legal/", "644"],
 ]

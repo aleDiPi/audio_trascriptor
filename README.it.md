@@ -203,3 +203,18 @@ Mentre tieni premuta la scorciatoia compare in basso a destra (sullo schermo del
 - **Aggiornamenti**: il nuovo `.exe` viene scaricato accanto al vecchio e il file `.old` viene cancellato al riavvio successivo; l'eventuale installer scaricato in `%TEMP%\Trascrittore-Update` viene cancellato all'avvio successivo.
 - **Contatori di utilizzo**: sono in memoria (poche righe per modello) e si azzerano alla chiusura.
 - A riposo il programma non fa nulla (icona nella tray e un controllo aggiornamenti ogni 6 ore, se hai il token); la finestra impostazioni esiste solo quando e' aperta.
+
+## Licenza e note legali / License and legal notes
+
+Il codice e' **visibile ma non riutilizzabile** (source-available): puoi leggerlo e usare gratuitamente i programmi pubblicati nelle Release, non puoi copiarlo, ridistribuirlo o farne derivati. Contributi (per esempio nuove lingue) benvenuti, vedi [CONTRIBUTING.md](CONTRIBUTING.md). *The source is **readable but not reusable** (source-available): you may read it and use the released programs for free; copying, redistribution and derivative works are not allowed. Contributions such as new languages are welcome.*
+
+| | Italiano | English |
+|---|---|---|
+| Licenza | [LICENSE.it.txt](legal/LICENSE.it.txt) | [LICENSE](LICENSE) |
+| Informativa privacy | [PRIVACY.it.md](legal/PRIVACY.it.md) | [PRIVACY.en.md](legal/PRIVACY.en.md) |
+| Avviso sui servizi AI di terzi | [DISCLAIMER.it.txt](legal/DISCLAIMER.it.txt) | [DISCLAIMER.en.txt](legal/DISCLAIMER.en.txt) |
+| Componenti di terzi | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | |
+
+**Importante:** Groq, OpenAI e Anthropic trattano i dati che invii secondo i loro termini; l'Autore non garantisce come li trattano. *Groq, OpenAI and Anthropic process what you send under their own terms; the Author does not guarantee how they handle it.* Questi testi non sono una consulenza legale. / *These texts are not legal advice.*
+
+<a href="https://slint.dev"><img src="https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png" alt="Made with Slint" height="48"></a>

@@ -68,6 +68,9 @@ debug_text_check = "Nel log anche testo dettato, prompt e risposta dell'AI (priv
 open_log = "Apri log"
 debug_off_note = "Spegnendo il debug i file di log vengono cancellati."
 slint_note = "Interfaccia realizzata con Slint (licenza royalty-free per applicazioni desktop, https://slint.dev)."
+card_legal = "Avviso legale e licenza"
+legal_disclaimer = "Servizi AI di terzi e privacy"
+legal_license = "Licenza (prevale il testo inglese)"
 language_auto = "Automatica (lingua del sistema)"
 
 [tray]
