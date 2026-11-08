@@ -10,7 +10,7 @@ The firmware has VIA support, so keys and LEDs are changed from a normal window,
 
 1. Open [usevia.app](https://www.usevia.app/) in Chrome or Edge (it talks to the keyboard over USB).
 2. Open the *Design* tab, turn on *Show Design tab* in *Settings* if you do not see it, and load `via-definition.json`
-   from this folder (*Use V2 definitions* on if asked).
+   from this folder (it is a VIA V3 definition; keep *Use V2 definitions* off).
 3. The *Configure* tab then shows the three keys (change them by clicking) and *Lighting* (effect, brightness,
    colour, speed). Settings are saved in the keyboard.
 
