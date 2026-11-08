@@ -180,6 +180,10 @@ fn scan_pad(conn: &RustConnection, root: u32, old: &PadDevices) -> PadDevices {
     found
 }
 
+/// keysym di F13 (F14 e F15 seguono)
+const KS_F13: u32 = 0xffca;
+const PAD_SYMS: [u32; 9] = [KS_CONTROL, 0xffe4, 0x63, 0x43, 0x76, 0x56, KS_F13, KS_F13 + 1, KS_F13 + 2];
+
 fn pad_key(keycode: u8, map: &std::collections::HashMap<u32, Vec<u8>>) -> Option<macropad::Key> {
     let has = |syms: &[u32]| syms.iter().any(|s| map.get(s).map_or(false, |v| v.contains(&keycode)));
     if has(&[KS_CONTROL, 0xffe4]) {
@@ -188,6 +192,12 @@ fn pad_key(keycode: u8, map: &std::collections::HashMap<u32, Vec<u8>>) -> Option
         Some(macropad::Key::C)
     } else if has(&[0x76, 0x56]) {
         Some(macropad::Key::V)
+    } else if has(&[KS_F13]) {
+        Some(macropad::Key::Pad(macropad::Slot::Logo))
+    } else if has(&[KS_F13 + 1]) {
+        Some(macropad::Key::Pad(macropad::Slot::C))
+    } else if has(&[KS_F13 + 2]) {
+        Some(macropad::Key::Pad(macropad::Slot::V))
     } else {
         None
     }
@@ -210,7 +220,7 @@ fn listen() -> Result<(), String> {
 
     let mut tracker = Tracker::default();
     let mut pad = scan_pad(&conn, root, &PadDevices::default());
-    let mut pad_codes = platform::resolve_keycodes(&conn, &[KS_CONTROL, 0xffe4, 0x63, 0x43, 0x76, 0x56]);
+    let mut pad_codes = platform::resolve_keycodes(&conn, &PAD_SYMS);
     loop {
         let (keycode, down, source) = match conn.wait_for_event().map_err(|e| format!("X11 connection lost: {e}"))? {
             XEvent::XinputRawKeyPress(e) => (e.detail, true, e.sourceid),
@@ -218,7 +228,7 @@ fn listen() -> Result<(), String> {
             XEvent::XinputHierarchy(_) | XEvent::PropertyNotify(_) => {
                 // dispositivo collegato/scollegato oppure impostazione cambiata
                 pad = scan_pad(&conn, root, &pad);
-                pad_codes = platform::resolve_keycodes(&conn, &[KS_CONTROL, 0xffe4, 0x63, 0x43, 0x76, 0x56]);
+                pad_codes = platform::resolve_keycodes(&conn, &PAD_SYMS);
                 macropad::reset_keys();
                 continue;
             }

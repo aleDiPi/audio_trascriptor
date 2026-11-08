@@ -12,6 +12,8 @@ pub enum Key {
     Ctrl,
     C,
     V,
+    /// Tasto "diretto" (F13, F14, F15 dopo la riprogrammazione): vale direttamente un pulsante
+    Pad(Slot),
 }
 
 /// Pulsante della tastiera, nell'ordine in cui compare nelle Impostazioni.
@@ -30,6 +32,7 @@ impl Key {
             Key::Ctrl => Slot::Logo,
             Key::C => Slot::C,
             Key::V => Slot::V,
+            Key::Pad(slot) => slot,
         }
     }
 }
@@ -40,6 +43,10 @@ pub fn key_for_vk(vk: u32) -> Option<Key> {
         0x11 | 0xA2 | 0xA3 => Some(Key::Ctrl),
         0x43 => Some(Key::C),
         0x56 => Some(Key::V),
+        // F13, F14, F15: Windows non li usa, la tastiera riprogrammata li invia al posto di Ctrl, C, V
+        0x7C => Some(Key::Pad(Slot::Logo)),
+        0x7D => Some(Key::Pad(Slot::C)),
+        0x7E => Some(Key::Pad(Slot::V)),
         _ => None,
     }
 }
@@ -177,6 +184,7 @@ pub struct Chords {
     pending: Option<Instant>,
     logo_active: bool,
     letters: [bool; 2],
+    direct: [bool; 3],
 }
 
 impl Chords {
@@ -206,6 +214,16 @@ impl Chords {
                     out.push((Slot::Logo, false));
                 } else if std::mem::replace(&mut self.logo_active, false) {
                     out.push((Slot::Logo, false));
+                }
+            }
+            (Key::Pad(slot), down) => {
+                let i = SLOTS.iter().position(|s| *s == slot).unwrap_or(0);
+                if down {
+                    if !std::mem::replace(&mut self.direct[i], true) {
+                        out.push((slot, true));
+                    }
+                } else if std::mem::replace(&mut self.direct[i], false) {
+                    out.push((slot, false));
                 }
             }
             (k, down) => {
@@ -368,6 +386,18 @@ mod tests {
         assert!(is_pad("Unknown", Some((0x16c0, 0x27db)), &extra));
         assert!(!is_pad("Unknown", Some((0x046d, 0xc31c)), &extra));
         assert!(!is_pad("Unknown", None, &extra));
+    }
+
+    #[test]
+    fn f13_f14_f15_are_direct_buttons_that_can_be_held() {
+        assert_eq!(key_for_vk(0x7C), Some(Key::Pad(Slot::Logo)));
+        assert_eq!(key_for_vk(0x7D), Some(Key::Pad(Slot::C)));
+        assert_eq!(key_for_vk(0x7E), Some(Key::Pad(Slot::V)));
+        let (mut c, t) = (Chords::default(), t0());
+        assert_eq!(c.feed(Key::Pad(Slot::C), true, t), vec![(Slot::C, true)]);
+        assert!(c.feed(Key::Pad(Slot::C), true, t).is_empty()); // ripetizione
+        assert_eq!(c.feed(Key::Pad(Slot::C), false, t), vec![(Slot::C, false)]);
+        assert!(c.feed(Key::Pad(Slot::C), false, t).is_empty());
     }
 
     #[test]
