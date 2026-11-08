@@ -168,6 +168,36 @@ pub fn is_pad(name: &str, ids: Option<(u16, u16)>, extra: &[String]) -> bool {
 /// se arriva una lettera (allora il pulsante e' C o V) oppure no (allora e' il logo, anche tenuto premuto).
 pub const CHORD_WINDOW: Duration = Duration::from_millis(60);
 
+/// Tasti appena arrivati dalla tastiera Stack Overflow (Windows): il filtro a basso livello li confronta con i propri
+/// per sapere se un Ctrl/C/V viene da lei. Il colpo e' di piu' tasti in un millisecondo, quindi serve una coda.
+#[derive(Default)]
+pub struct Recent {
+    items: std::collections::VecDeque<(Key, bool, Instant)>,
+}
+
+impl Recent {
+    pub const WINDOW: Duration = Duration::from_millis(200);
+
+    pub fn push(&mut self, key: Key, down: bool, now: Instant) {
+        self.items.push_back((key, down, now));
+        while self.items.len() > 32 {
+            self.items.pop_front();
+        }
+    }
+
+    /// C'e' un tasto uguale arrivato da poco? Se si' lo toglie dalla coda (ogni tasto si usa una volta sola).
+    pub fn take(&mut self, key: Key, down: bool, now: Instant) -> bool {
+        self.items.retain(|(_, _, t)| now.duration_since(*t) < Self::WINDOW);
+        match self.items.iter().position(|(k, d, _)| *k == key && *d == down) {
+            Some(i) => {
+                self.items.remove(i);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
 /// Un pulsante rilasciato prima di questo tempo e' un "tocco": la registrazione continua fino al tocco successivo.
 pub const TAP_MAX: Duration = Duration::from_millis(350);
 
@@ -398,6 +428,28 @@ mod tests {
         assert!(c.feed(Key::Pad(Slot::C), true, t).is_empty()); // ripetizione
         assert_eq!(c.feed(Key::Pad(Slot::C), false, t), vec![(Slot::C, false)]);
         assert!(c.feed(Key::Pad(Slot::C), false, t).is_empty());
+    }
+
+    #[test]
+    fn a_whole_chord_can_be_matched_in_order_even_if_it_arrived_at_once() {
+        let (mut r, t) = (Recent::default(), t0());
+        for (k, d) in [(Key::Ctrl, true), (Key::V, true), (Key::V, false), (Key::Ctrl, false)] {
+            r.push(k, d, t);
+        }
+        assert!(r.take(Key::Ctrl, true, t));
+        assert!(r.take(Key::V, true, t));
+        assert!(r.take(Key::V, false, t));
+        assert!(r.take(Key::Ctrl, false, t));
+        assert!(!r.take(Key::V, true, t)); // ogni tasto vale una volta
+    }
+
+    #[test]
+    fn old_or_different_keys_are_not_matched() {
+        let (mut r, t) = (Recent::default(), t0());
+        r.push(Key::C, true, t);
+        assert!(!r.take(Key::V, true, t));
+        assert!(!r.take(Key::C, false, t));
+        assert!(!r.take(Key::C, true, t + Recent::WINDOW * 2));
     }
 
     #[test]
