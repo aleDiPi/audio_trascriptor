@@ -6,9 +6,9 @@ The program understands both the factory keys and F13-F15, so reprogramming is o
 
 ## LEDs
 
-The keymap keeps the LED settings of Drop's `rgb-control` keymap: press the **C and V keys together** to open the
-LED pages (on/off + effect, brightness, hue, saturation); the first key moves to the next page, the other two change
-the setting. After the last page you are back to normal use. Settings are saved in the keyboard.
+Tap the **Stack Overflow key twice** to enter LED mode (the LEDs blink): then the **C key** changes the LED effect,
+the **V key** changes the colour, and the Stack Overflow key goes back to normal use. Settings are saved in the keyboard.
+(Brightness and on/off are not mapped; ask if you need them.)
 
 ## How to flash it (about 10 minutes)
 
