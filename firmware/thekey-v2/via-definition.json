@@ -1,0 +1,11 @@
+{
+  "name": "The Key V2",
+  "vendorProductId": 899350542,
+  "lighting": "qmk_rgblight",
+  "matrix": { "rows": 1, "cols": 3 },
+  "layouts": {
+    "keymap": [
+      ["0,0", "0,1", "0,2"]
+    ]
+  }
+}

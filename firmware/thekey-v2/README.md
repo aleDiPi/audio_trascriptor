@@ -4,11 +4,18 @@ By default the three keys send Ctrl, C and V. This keymap makes them send **F13,
 Windows and normal programs never use), so Trascrittore audio can use them without clashing with anything.
 The program understands both the factory keys and F13-F15, so reprogramming is optional.
 
-## LEDs
+## Keys and LEDs with the VIA app
 
-Tap the **Stack Overflow key twice** to enter LED mode (the LEDs blink): then the **C key** changes the LED effect,
-the **V key** changes the colour, and the Stack Overflow key goes back to normal use. Settings are saved in the keyboard.
-(Brightness and on/off are not mapped; ask if you need them.)
+The firmware has VIA support, so keys and LEDs are changed from a normal window, no more flashing:
+
+1. Open [usevia.app](https://www.usevia.app/) in Chrome or Edge (it talks to the keyboard over USB).
+2. Open the *Design* tab, turn on *Show Design tab* in *Settings* if you do not see it, and load `via-definition.json`
+   from this folder (*Use V2 definitions* on if asked).
+3. The *Configure* tab then shows the three keys (change them by clicking) and *Lighting* (effect, brightness,
+   colour, speed). Settings are saved in the keyboard.
+
+On first start the LEDs show a different colour on every LED across the whole rainbow (static gradient). In the
+*Lighting* tab choose the effect *Static Gradient* or *Rainbow Swirl* to get that look back.
 
 ## How to flash it (about 10 minutes)
 
