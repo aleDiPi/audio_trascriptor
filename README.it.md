@@ -154,6 +154,7 @@ Un suono breve (meno di 0,25 s) segnala l'inizio e un altro la fine della regist
 ## Configurazione (`config.toml`)
 
 - `hotkey`: scorciatoia, es. `"ctrl+win"`, `"ctrl+alt+space"`, `"f9"`.
+- `macropad`, `macropad_logo`, `macropad_c`, `macropad_v`, `macropad_ids`: supporto alla tastiera a 3 tasti "The Key" di Stack Overflow. Quando è collegata compare una scheda nelle Impostazioni e i suoi pulsanti avviano la dettatura (predefiniti: logo = normale con AI + Invio, C = senza AI + Invio, V = solo trascrizione). Il dispositivo si riconosce dal nome USB; se non succede, aggiungi il suo `vid:pid` in `macropad_ids` (con la modalità debug il log elenca ogni tastiera con i suoi id). La tastiera deve inviare i tasti di fabbrica (Ctrl, C, V). Progetto indipendente, non affiliato a Stack Overflow.
 - `mode`: `"hold"` (tieni premuto) o `"toggle"` (premi per iniziare/finire).
 - `language`: lingua del parlato che detti (codice ISO-639-1, per esempio `"it"`, `"en"`; vuoto = rilevamento automatico).
 - `ui_language`: lingua dei menu e delle finestre: `"auto"` (lingua del sistema) oppure un codice come `"it"`, `"en"`. Si cambia anche dalle Impostazioni.

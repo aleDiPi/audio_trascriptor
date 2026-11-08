@@ -153,6 +153,7 @@ A short sound (less than 0.25 s) marks the start and another the end of the reco
 ## Configuration (`config.toml`)
 
 - `hotkey`: shortcut, e.g. `"ctrl+win"`, `"ctrl+alt+space"`, `"f9"`.
+- `macropad`, `macropad_logo`, `macropad_c`, `macropad_v`, `macropad_ids`: support for the Stack Overflow "The Key" 3-key keyboard. When it is plugged in, a card appears in Settings and its buttons start the dictation (defaults: logo = normal with AI + Enter, C = no AI + Enter, V = transcription only). The device is recognised by its USB name; if it is not, add its `vid:pid` to `macropad_ids` (turn on debug mode: the log lists every keyboard with its ids). The keyboard must send its factory keys (Ctrl, C, V). Independent project, not affiliated with Stack Overflow.
 - `mode`: `"hold"` (hold down) or `"toggle"` (press to start/finish).
 - `language`: language of the speech you dictate (ISO-639-1 code such as `"en"`, `"it"`; empty = automatic detection).
 - `ui_language`: language of the menus and windows: `"auto"` (system language) or a code such as `"en"`, `"it"`. Also changeable in Settings.

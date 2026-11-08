@@ -19,6 +19,11 @@ mod aec;
 mod audio;
 #[cfg(any(desktop, test))]
 #[cfg_attr(not(desktop), allow(dead_code))]
+mod macropad;
+#[cfg(windows)]
+mod pad_windows;
+#[cfg(any(desktop, test))]
+#[cfg_attr(not(desktop), allow(dead_code))]
 mod combo;
 #[cfg(any(desktop, test))]
 #[cfg_attr(not(desktop), allow(dead_code))]
@@ -88,6 +93,8 @@ mod shell;
 pub enum Event {
     HotkeyDown,
     HotkeyUp,
+    /// Pulsante della tastiera Stack Overflow premuto (true) o rilasciato (false)
+    Pad(macropad::Slot, bool),
     Reload,
 }
 
@@ -98,6 +105,15 @@ pub enum Ui {
     Recording,
     Working,
     Error,
+}
+
+/// Rilegge i dispositivi: la tastiera Stack Overflow e' stata attivata o disattivata dalle Impostazioni.
+#[cfg(desktop)]
+pub fn refresh_pad() {
+    #[cfg(windows)]
+    pad_windows::refresh_pad();
+    #[cfg(target_os = "linux")]
+    hotkey::refresh_pad();
 }
 
 #[cfg(desktop)]
@@ -152,6 +168,8 @@ mod app {
             })
         };
         hotkey::install(ev_tx.clone());
+        #[cfg(windows)]
+        pad_windows::start(ev_tx.clone());
         overlay::start();
         updater::start_background();
         std::thread::spawn({
@@ -184,7 +202,9 @@ mod app {
 
     fn worker(rx: Receiver<Event>, notify: Arc<dyn Fn(Ui, String) + Send + Sync>) {
         let mut cfg = config::load();
-        let mut rec: Option<(audio::Recorder, String, String)> = None; // recorder, exe, titolo
+        let mut rec: Option<Rec> = None;
+        let mut pad_slot: Option<macropad::Slot> = None; // pulsante che ha avviato la registrazione
+        let mut pad_action: Option<macropad::Action> = None;
         while let Ok(ev) = rx.recv() {
             match ev {
                 Event::Reload => {
@@ -193,42 +213,76 @@ mod app {
                     apply_hotkey(&cfg.hotkey);
                     notify(Ui::Idle, String::new());
                 }
+                Event::Pad(slot, down) => {
+                    // i pulsanti si cambiano dalle Impostazioni senza ricaricare: si rilegge il file
+                    let fresh = config::load();
+                    if !fresh.macropad {
+                        continue;
+                    }
+                    let action = macropad::action_for(slot, &fresh.macropad_logo, &fresh.macropad_c, &fresh.macropad_v);
+                    config::debug(|| format!("pad button {slot:?} {} (action {}, recording: {})", if down { "down" } else { "up" }, action.id(), rec.is_some()));
+                    if down {
+                        if rec.is_some() {
+                            if cfg.is_toggle() {
+                                finish(&mut rec, &cfg, &notify, pad_action.take());
+                                pad_slot = None;
+                            }
+                        } else if action != macropad::Action::Off && start_recording(&mut rec, &notify, &cfg) {
+                            pad_slot = Some(slot);
+                            pad_action = Some(action);
+                        }
+                    } else if !cfg.is_toggle() && rec.is_some() && pad_slot == Some(slot) {
+                        finish(&mut rec, &cfg, &notify, pad_action.take());
+                        pad_slot = None;
+                    }
+                }
                 Event::HotkeyDown => {
                     config::debug(|| format!("hotkey pressed (recording in progress: {})", rec.is_some()));
                     if rec.is_some() {
                         if cfg.is_toggle() {
-                            finish(&mut rec, &cfg, &notify);
+                            finish(&mut rec, &cfg, &notify, pad_action.take());
+                            pad_slot = None;
                         }
-                    } else if !providers::stt_available(&providers::parse_order(&cfg.providers), config::provider_ready) {
-                        // nessuna chiave e nessun modello locale: parlare sarebbe inutile, si avvisa e si apre la sezione AI
-                        config::log("no AI service ready (no API key and no local model): not recording");
-                        no_ai_notice();
-                    } else {
-                        let (exe, title) = platform::foreground_app();
-                        config::debug(|| format!("foreground app: '{exe}', title '{title}'"));
-                        // il suono d'avvio non deve finire nella registrazione: si scartano i suoi millisecondi
-                        let played = sounds::play(sounds::Kind::Start);
-                        let skip_ms = if played > 0 { played + 120 } else { 0 };
-                        match audio::start(cfg.max_seconds, skip_ms, cfg.echo_cancel) {
-                            Ok(r) => {
-                                rec = Some((r, exe, title));
-                                updater::BUSY.store(true, std::sync::atomic::Ordering::Relaxed);
-                                overlay::show_recording(platform::foreground_icon());
-                                notify(Ui::Recording, crate::i18n::t("tray.tip_recording"));
-                            }
-                            Err(e) => {
-                                config::log(&format!("cannot start recording: {e}"));
-                                notify(Ui::Error, crate::i18n::tf("tray.tip_mic_error", &[("err", &e)]));
-                            }
-                        }
+                    } else if start_recording(&mut rec, &notify, &cfg) {
+                        pad_slot = None;
+                        pad_action = None;
                     }
                 }
                 Event::HotkeyUp => {
                     config::debug(|| format!("hotkey released (recording in progress: {})", rec.is_some()));
-                    if !cfg.is_toggle() && rec.is_some() {
-                        finish(&mut rec, &cfg, &notify);
+                    if !cfg.is_toggle() && rec.is_some() && pad_slot.is_none() {
+                        finish(&mut rec, &cfg, &notify, None);
                     }
                 }
+            }
+        }
+    }
+
+    /// Avvia la registrazione (scorciatoia o pulsante della tastiera). Restituisce true se e' partita.
+    fn start_recording(rec: &mut Option<Rec>, notify: &Arc<dyn Fn(Ui, String) + Send + Sync>, cfg: &config::Config) -> bool {
+        if !providers::stt_available(&providers::parse_order(&cfg.providers), config::provider_ready) {
+            // nessuna chiave e nessun modello locale: parlare sarebbe inutile, si avvisa e si apre la sezione AI
+            config::log("no AI service ready (no API key and no local model): not recording");
+            no_ai_notice();
+            return false;
+        }
+        let (exe, title) = platform::foreground_app();
+        config::debug(|| format!("foreground app: '{exe}', title '{title}'"));
+        // il suono d'avvio non deve finire nella registrazione: si scartano i suoi millisecondi
+        let played = sounds::play(sounds::Kind::Start);
+        let skip_ms = if played > 0 { played + 120 } else { 0 };
+        match audio::start(cfg.max_seconds, skip_ms, cfg.echo_cancel) {
+            Ok(r) => {
+                *rec = Some((r, exe, title));
+                updater::BUSY.store(true, std::sync::atomic::Ordering::Relaxed);
+                overlay::show_recording(platform::foreground_icon());
+                notify(Ui::Recording, crate::i18n::t("tray.tip_recording"));
+                true
+            }
+            Err(e) => {
+                config::log(&format!("cannot start recording: {e}"));
+                notify(Ui::Error, crate::i18n::tf("tray.tip_mic_error", &[("err", &e)]));
+                false
             }
         }
     }
@@ -257,11 +311,9 @@ mod app {
         });
     }
 
-    fn finish(
-        rec: &mut Option<(audio::Recorder, String, String)>,
-        cfg: &config::Config,
-        notify: &Arc<dyn Fn(Ui, String) + Send + Sync>,
-    ) {
+    type Rec = (audio::Recorder, String, String); // recorder, exe, titolo
+
+    fn finish(rec: &mut Option<Rec>, cfg: &config::Config, notify: &Arc<dyn Fn(Ui, String) + Send + Sync>, pad: Option<macropad::Action>) {
         let Some((r, exe, title)) = rec.take() else { return };
         let wav = r.finish(); // il microfono e' gia' chiuso: il suono di fine non viene registrato
         sounds::play(sounds::Kind::End);
@@ -275,7 +327,7 @@ mod app {
         notify(Ui::Working, crate::i18n::t("tray.tip_working"));
         let (cfg, notify) = (cfg.clone(), notify.clone());
         std::thread::spawn(move || {
-            let result = process(wav, &cfg, &exe, &title);
+            let result = process(wav, &cfg, &exe, &title, pad);
             updater::BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
             overlay::hide();
             match result {
@@ -292,7 +344,7 @@ mod app {
         usage::ApiError { provider: p.name(), status: 0, retry_after: None, msg }
     }
 
-    fn process(wav: Vec<u8>, cfg: &config::Config, exe: &str, title: &str) -> Result<(), String> {
+    fn process(wav: Vec<u8>, cfg: &config::Config, exe: &str, title: &str, pad: Option<macropad::Action>) -> Result<(), String> {
         let order = providers::parse_order(&cfg.providers);
         let stt_order = providers::stt_order(&order);
         config::debug(|| format!("sending audio: {} KB, language '{}', services in order {:?}", wav.len() / 1024, cfg.language, stt_order.iter().map(|p| p.name()).collect::<Vec<_>>()));
@@ -331,7 +383,8 @@ mod app {
             Some(r) => format!("app rule: {} (raw: {}, enter: {})", r.exe.join(", "), r.raw, r.send_enter),
             None => "no rule for this app: using the base prompt".into(),
         });
-        let raw = rule.map_or(false, |r| r.raw);
+        // un pulsante della tastiera Stack Overflow puo' forzare l'uso (o il non uso) dell'AI
+        let raw = pad.and_then(|a| a.ai()).map_or_else(|| rule.map_or(false, |r| r.raw), |ai| !ai);
         let final_text = if raw {
             text
         } else {
@@ -372,7 +425,7 @@ mod app {
             }
         };
         let paste = rule.map_or("ctrl+v", |r| if r.paste.is_empty() { "ctrl+v" } else { r.paste.as_str() });
-        let send_enter = rule.map_or(false, |r| r.send_enter);
+        let send_enter = pad.and_then(|a| a.enter()).unwrap_or_else(|| rule.map_or(false, |r| r.send_enter));
         config::debug(|| format!("pasting {} characters ({paste}, enter: {send_enter})", final_text.chars().count()));
         platform::paste_text(&final_text, paste, cfg.restore_clipboard, send_enter)
     }

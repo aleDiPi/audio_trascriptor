@@ -14,6 +14,7 @@ static DEBUG: AtomicBool = AtomicBool::new(false);
 static TEXT_FLAG: AtomicBool = AtomicBool::new(false);
 static OVERLAY: AtomicBool = AtomicBool::new(true);
 static ECHO_CANCEL: AtomicBool = AtomicBool::new(false);
+static MACROPAD: AtomicBool = AtomicBool::new(true);
 static AUTO_UPDATE: AtomicBool = AtomicBool::new(true);
 static SOUNDS: AtomicBool = AtomicBool::new(true);
 static SOUND_VOLUME: AtomicU8 = AtomicU8::new(DEFAULT_SOUND_VOLUME);
@@ -61,6 +62,14 @@ pub struct Config {
     pub echo_cancel: bool,
     /// Controllo e installazione automatica degli aggiornamenti
     pub auto_update: bool,
+    /// Tastiera a 3 tasti di Stack Overflow: se e' collegata i suoi pulsanti avviano la dettatura
+    pub macropad: bool,
+    /// Azione di ciascun pulsante: full, raw_send, raw, ai oppure off (vedi macropad.rs)
+    pub macropad_logo: String,
+    pub macropad_c: String,
+    pub macropad_v: String,
+    /// VID:PID aggiuntivi (es. "16c0:27db") se la tastiera non viene riconosciuta dal nome
+    pub macropad_ids: Vec<String>,
     /// In debug scrive nel log anche il testo dettato (disattivato di default: e' privato)
     pub debug_log_text: bool,
     pub default_prompt: String,
@@ -118,6 +127,11 @@ impl Default for Config {
             sound_style: "soft".into(),
             echo_cancel: false,
             auto_update: true,
+            macropad: true,
+            macropad_logo: "full".into(),
+            macropad_c: "raw_send".into(),
+            macropad_v: "raw".into(),
+            macropad_ids: Vec::new(),
             debug_log_text: false,
             default_prompt: "Fix punctuation and errors in the dictated text without changing its meaning. Reply in the same language as the text.".into(),
             dictionary: Vec::new(),
@@ -274,6 +288,7 @@ pub fn load() -> Config {
     *SOUND_STYLE.lock().unwrap() = c.sound_style.clone();
     AUTO_UPDATE.store(c.auto_update, Ordering::Relaxed);
     ECHO_CANCEL.store(c.echo_cancel, Ordering::Relaxed);
+    MACROPAD.store(c.macropad, Ordering::Relaxed);
     c
 }
 
@@ -498,6 +513,26 @@ fn write_toml(f: impl FnOnce(&str) -> String) {
     if let Ok(text) = std::fs::read_to_string(&path) {
         let _ = std::fs::write(&path, f(&text));
     }
+}
+
+pub fn macropad_enabled() -> bool {
+    MACROPAD.load(Ordering::Relaxed)
+}
+
+/// Attiva/disattiva la tastiera Stack Overflow e lo scrive in config.toml (`macropad = ...`).
+pub fn set_macropad(on: bool) {
+    MACROPAD.store(on, Ordering::Relaxed);
+    write_toml(|t| set_toml_bool(t, "macropad", on));
+}
+
+/// Salva l'azione di un pulsante (`macropad_logo`, `macropad_c`, `macropad_v`).
+pub fn set_macropad_action(slot: crate::macropad::Slot, action: crate::macropad::Action) {
+    let key = match slot {
+        crate::macropad::Slot::Logo => "macropad_logo",
+        crate::macropad::Slot::C => "macropad_c",
+        crate::macropad::Slot::V => "macropad_v",
+    };
+    write_toml(|t| set_toml_string(t, key, action.id()));
 }
 
 /// Attiva/disattiva i suoni e lo scrive in config.toml (`sounds = ...`).
@@ -815,6 +850,24 @@ mod tests {
         assert!(!c.is_toggle());
         assert!(c.default_prompt.contains("corrector"));
         assert!(!c.apps.is_empty());
+    }
+
+    #[test]
+    fn example_macropad_defaults_match_the_code() {
+        use crate::macropad::{action_for, default_action, SLOTS};
+        let c = example();
+        assert!(c.macropad && c.macropad_ids.is_empty());
+        for slot in SLOTS {
+            assert_eq!(action_for(slot, &c.macropad_logo, &c.macropad_c, &c.macropad_v), default_action(slot));
+        }
+    }
+
+    #[test]
+    fn macropad_action_is_saved_in_config_text() {
+        let t = set_toml_string("macropad = true\n[[apps]]\n", "macropad_c", "ai");
+        let c: Config = toml::from_str(&t).unwrap();
+        assert_eq!(c.macropad_c, "ai");
+        assert!(c.macropad);
     }
 
     #[test]
