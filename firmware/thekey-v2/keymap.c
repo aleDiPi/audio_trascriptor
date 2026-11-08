@@ -1,58 +1,54 @@
 // Keymap for Trascrittore audio, Stack Overflow "The Key V2" (QMK keyboard drop/thekey/v2).
-// Layer 0: the three keys send F13, F14 and F15 (keys no program uses; the factory firmware sends Ctrl, C, V).
-//          Order: Stack Overflow key, C key, V key.
-// LEDs: press the C and V keys together to enter the LED settings pages (same pages as Drop's "rgb-control"
-//       keymap): 1 = on/off + effect, 2 = brightness, 3 = hue, 4 = saturation. In pages 1-4 the first key moves
-//       to the next page (after page 4 you are back at layer 0), the other two keys change the setting.
-// Based on Jason Wihardja's rgb-control keymap (GPL-2.0-or-later).
+// Normal use: the three keys send F13 (Stack Overflow key), F14 (C key) and F15 (V key) instead of Ctrl, C, V.
+//   The Stack Overflow key can be held (F13 stays down while you hold it).
+// LEDs: tap the Stack Overflow key twice to enter LED mode (the first LED blinks). Then:
+//   C key = next LED effect, V key = next colour, Stack Overflow key = back to normal use.
+// Brightness and on/off are not mapped; the settings are saved in the keyboard.
+// SPDX-License-Identifier: GPL-2.0-or-later
 #include QMK_KEYBOARD_H
 
-enum custom_keycodes {
-    LAYER_SWITCH = SAFE_RANGE,
-};
+enum { TD_LOGO = 0 };
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
-    [0] = LAYOUT(KC_F13, KC_F14, KC_F15),
-    [1] = LAYOUT(LAYER_SWITCH, UG_TOGG, UG_NEXT),
-    [2] = LAYOUT(LAYER_SWITCH, UG_VALD, UG_VALU),
-    [3] = LAYOUT(LAYER_SWITCH, UG_HUED, UG_HUEU),
-    [4] = LAYOUT(LAYER_SWITCH, UG_SATD, UG_SATU),
+    [0] = LAYOUT(TD(TD_LOGO), KC_F14, KC_F15),
+    [1] = LAYOUT(TO(0), UG_NEXT, UG_HUEU),
 };
 
-const uint16_t PROGMEM led_combo[] = {KC_F14, KC_F15, COMBO_END};
-combo_t key_combos[] = {
-    COMBO(led_combo, LAYER_SWITCH),
-};
-
-const rgblight_segment_t PROGMEM layer_indicator_0[] = RGBLIGHT_LAYER_SEGMENTS({0, 1, HSV_WHITE}, {1, 4, HSV_OFF});
-const rgblight_segment_t PROGMEM layer_indicator_1[] = RGBLIGHT_LAYER_SEGMENTS({0, 1, HSV_OFF}, {1, 1, HSV_WHITE}, {2, 3, HSV_OFF});
-const rgblight_segment_t PROGMEM layer_indicator_2[] = RGBLIGHT_LAYER_SEGMENTS({0, 2, HSV_OFF}, {2, 1, HSV_WHITE}, {3, 2, HSV_OFF});
-const rgblight_segment_t PROGMEM layer_indicator_3[] = RGBLIGHT_LAYER_SEGMENTS({0, 3, HSV_OFF}, {3, 1, HSV_WHITE}, {4, 1, HSV_OFF});
-const rgblight_segment_t PROGMEM layer_indicator_4[] = RGBLIGHT_LAYER_SEGMENTS({0, 4, HSV_OFF}, {4, 1, HSV_WHITE});
-
-const rgblight_segment_t *const PROGMEM rgb_layers[] =
-    RGBLIGHT_LAYERS_LIST(layer_indicator_0, layer_indicator_1, layer_indicator_2, layer_indicator_3, layer_indicator_4);
+const rgblight_segment_t PROGMEM led_mode_blink[] = RGBLIGHT_LAYER_SEGMENTS({0, 5, HSV_WHITE});
+const rgblight_segment_t *const PROGMEM rgb_layers[] = RGBLIGHT_LAYERS_LIST(led_mode_blink);
 
 void keyboard_post_init_user(void) {
     rgblight_layers = rgb_layers;
 }
 
-static uint8_t page = 0;
-
-bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    if (keycode == LAYER_SWITCH) {
-        if (record->event.pressed) {
-            if (page > 0) {
-                layer_off(page);
-            }
-            rgblight_unblink_layer(page);
-            page = (page + 1) % 5;
-            rgblight_blink_layer_repeat(page, 1000, 1);
-            if (page > 0) {
-                layer_on(page);
-            }
-        }
-        return false;
-    }
-    return true;
+layer_state_t layer_state_set_user(layer_state_t state) {
+    // blink when LED mode starts or ends
+    rgblight_blink_layer_repeat(0, 150, 1);
+    return state;
 }
+
+typedef struct {
+    bool f13_down;
+} logo_state_t;
+static logo_state_t logo = {false};
+
+static void logo_finished(tap_dance_state_t *state, void *user_data) {
+    if (state->count >= 2) {
+        layer_on(1);
+        return;
+    }
+    // one tap or hold: F13 (held while the key is held)
+    register_code(KC_F13);
+    logo.f13_down = true;
+}
+
+static void logo_reset(tap_dance_state_t *state, void *user_data) {
+    if (logo.f13_down) {
+        unregister_code(KC_F13);
+        logo.f13_down = false;
+    }
+}
+
+tap_dance_action_t tap_dance_actions[] = {
+    [TD_LOGO] = ACTION_TAP_DANCE_FN_ADVANCED(NULL, logo_finished, logo_reset),
+};
