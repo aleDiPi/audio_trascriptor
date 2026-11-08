@@ -5,7 +5,12 @@
 
 use crate::combo::Combo;
 use crate::platform::{self, KS_ALT, KS_CONTROL, KS_SHIFT, KS_SUPER};
-use crate::{config, Event};
+use crate::{config, macropad, Event};
+use std::sync::Arc;
+use x11rb::rust_connection::RustConnection;
+use x11rb::protocol::xinput::{DeviceType, GrabOwner, XIGetPropertyItems};
+use x11rb::protocol::xproto::{self, ChangeWindowAttributesAux, ConnectionExt as _, GrabMode, GrabStatus, PropMode};
+use x11rb::wrapper::ConnectionExt as _;
 use std::collections::HashSet;
 use std::sync::mpsc::Sender;
 use std::sync::{Mutex, OnceLock};
@@ -109,21 +114,129 @@ fn codes_for(combo: &Combo, conn: &x11rb::rust_connection::RustConnection) -> Co
     }
 }
 
+/// Connessione condivisa per svegliare il thread dei dispositivi (da Impostazioni o dal ricaricamento).
+static WAKE: OnceLock<(Arc<RustConnection>, u32, u32)> = OnceLock::new();
+
+/// Chiede di riesaminare subito i dispositivi (la tastiera Stack Overflow e' stata attivata o disattivata).
+pub fn refresh_pad() {
+    if let Some((conn, root, atom)) = WAKE.get() {
+        let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u32);
+        let _ = conn.change_property32(PropMode::REPLACE, *root, *atom, xproto::AtomEnum::CARDINAL, &[n]);
+        let _ = conn.flush();
+    }
+}
+
+/// Tastiera Stack Overflow collegata: identificativi dei dispositivi X (slave) e nome.
+#[derive(Default)]
+struct PadDevices {
+    ids: HashSet<u16>,
+    name: String,
+}
+
+fn product_id(conn: &RustConnection, dev: u16) -> Option<(u16, u16)> {
+    let atom = conn.intern_atom(true, b"Device Product ID").ok()?.reply().ok()?.atom;
+    if atom == 0 {
+        return None;
+    }
+    let r = conn.xinput_xi_get_property(dev, false, atom, 0, 0, 2).ok()?.reply().ok()?;
+    match r.items {
+        XIGetPropertyItems::Data32(v) if v.len() >= 2 => Some((v[0] as u16, v[1] as u16)),
+        _ => None,
+    }
+}
+
+/// Cerca la tastiera tra i dispositivi e la "cattura" (grab): cosi' i suoi Ctrl/C/V non arrivano alle applicazioni.
+fn scan_pad(conn: &RustConnection, root: u32, old: &PadDevices) -> PadDevices {
+    let mut found = PadDevices::default();
+    if config::macropad_enabled() {
+        let extra = config::load().macropad_ids;
+        if let Ok(reply) = conn.xinput_xi_query_device(0u16).map_err(|e| e.to_string()).and_then(|c| c.reply().map_err(|e| e.to_string())) {
+            for info in reply.infos {
+                if info.type_ != DeviceType::SLAVE_KEYBOARD {
+                    continue;
+                }
+                let name = String::from_utf8_lossy(&info.name).to_string();
+                let ids = product_id(conn, info.deviceid);
+                config::debug(|| format!("keyboard device {}: '{name}', usb id {:?}", info.deviceid, ids.map(|(v, p)| format!("{v:04x}:{p:04x}"))));
+                if macropad::is_pad(&name, ids, &extra) {
+                    found.ids.insert(info.deviceid);
+                    found.name = name;
+                }
+            }
+        }
+    }
+    for dev in &found.ids {
+        if !old.ids.contains(dev) {
+            let grab = conn.xinput_xi_grab_device(root, 0u32, 0,  *dev, GrabMode::ASYNC, GrabMode::ASYNC, GrabOwner::NO_OWNER, &[]);
+            let ok = grab.map_err(|e| e.to_string()).and_then(|c| c.reply().map_err(|e| e.to_string())).map(|r| r.status == GrabStatus::SUCCESS);
+            config::log(&format!("Stack Overflow keyboard (device {dev}): exclusive grab {}", if ok == Ok(true) { "ok".to_string() } else { format!("failed ({ok:?})") }));
+        }
+    }
+    for dev in old.ids.difference(&found.ids) {
+        let _ = conn.xinput_xi_ungrab_device(0u32, *dev);
+    }
+    let _ = conn.flush();
+    macropad::set_present(!found.ids.is_empty(), &found.name);
+    found
+}
+
+fn pad_key(keycode: u8, map: &std::collections::HashMap<u32, Vec<u8>>) -> Option<macropad::Key> {
+    let has = |syms: &[u32]| syms.iter().any(|s| map.get(s).map_or(false, |v| v.contains(&keycode)));
+    if has(&[KS_CONTROL, 0xffe4]) {
+        Some(macropad::Key::Ctrl)
+    } else if has(&[0x63, 0x43]) {
+        Some(macropad::Key::C)
+    } else if has(&[0x76, 0x56]) {
+        Some(macropad::Key::V)
+    } else {
+        None
+    }
+}
+
 fn listen() -> Result<(), String> {
     let (conn, root) = platform::connect()?;
+    let conn = Arc::new(conn);
     conn.xinput_xi_query_version(2, 0).map_err(|e| e.to_string())?.reply().map_err(|e| format!("XInput2 not available: {e}"))?;
-    // 1 = XIAllMasterDevices
+    // 1 = XIAllMasterDevices, 0 = XIAllDevices (le modifiche ai dispositivi arrivano solo da qui)
     let mask = EventMask { deviceid: 1, mask: vec![XIEventMask::RAW_KEY_PRESS | XIEventMask::RAW_KEY_RELEASE] };
-    conn.xinput_xi_select_events(root, &[mask]).map_err(|e| e.to_string())?;
+    let hier = EventMask { deviceid: 0, mask: vec![XIEventMask::HIERARCHY] };
+    conn.xinput_xi_select_events(root, &[mask, hier]).map_err(|e| e.to_string())?;
+    // una proprieta' della finestra radice serve a svegliare questo thread dall'esterno (vedi refresh_pad)
+    if let Ok(atom) = conn.intern_atom(false, b"_TRASCRITTORE_WAKE").map_err(|e| e.to_string()).and_then(|c| c.reply().map_err(|e| e.to_string())) {
+        let _ = conn.change_window_attributes(root, &ChangeWindowAttributesAux::new().event_mask(xproto::EventMask::PROPERTY_CHANGE));
+        let _ = WAKE.set((conn.clone(), root, atom.atom));
+    }
     conn.flush().map_err(|e| e.to_string())?;
 
     let mut tracker = Tracker::default();
+    let mut pad = scan_pad(&conn, root, &PadDevices::default());
+    let mut pad_codes = platform::resolve_keycodes(&conn, &[KS_CONTROL, 0xffe4, 0x63, 0x43, 0x76, 0x56]);
+    let mut pad_edges = macropad::Edges::default();
     loop {
-        let (keycode, down) = match conn.wait_for_event().map_err(|e| format!("X11 connection lost: {e}"))? {
-            XEvent::XinputRawKeyPress(e) => (e.detail, true),
-            XEvent::XinputRawKeyRelease(e) => (e.detail, false),
+        let (keycode, down, source) = match conn.wait_for_event().map_err(|e| format!("X11 connection lost: {e}"))? {
+            XEvent::XinputRawKeyPress(e) => (e.detail, true, e.sourceid),
+            XEvent::XinputRawKeyRelease(e) => (e.detail, false, e.sourceid),
+            XEvent::XinputHierarchy(_) | XEvent::PropertyNotify(_) => {
+                // dispositivo collegato/scollegato oppure impostazione cambiata
+                pad = scan_pad(&conn, root, &pad);
+                pad_codes = platform::resolve_keycodes(&conn, &[KS_CONTROL, 0xffe4, 0x63, 0x43, 0x76, 0x56]);
+                pad_edges.clear();
+                continue;
+            }
             _ => continue,
         };
+        let Ok(keycode) = u8::try_from(keycode) else { continue };
+        if pad.ids.contains(&source) {
+            // tasti della tastiera Stack Overflow: non fanno parte della scorciatoia normale
+            if let Some(key) = pad_key(keycode, &pad_codes) {
+                if let Some(edge) = pad_edges.feed(key.slot(), down) {
+                    if let Some(tx) = TX.get() {
+                        let _ = tx.send(Event::Pad(key.slot(), edge));
+                    }
+                }
+            }
+            continue;
+        }
         let renew = {
             let mut s = SHARED.lock().unwrap();
             std::mem::replace(&mut s.dirty, false).then_some(s.combo)
@@ -131,7 +244,6 @@ fn listen() -> Result<(), String> {
         if let Some(combo) = renew {
             tracker = Tracker::new(combo, codes_for(&combo, &conn));
         }
-        let Ok(keycode) = u8::try_from(keycode) else { continue };
         let ev = match tracker.feed(keycode, down) {
             Some(Edge::Down) => Event::HotkeyDown,
             Some(Edge::Up) => Event::HotkeyUp,

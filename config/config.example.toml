@@ -28,6 +28,16 @@ stt_fallback_models = ["whisper-large-v3"]
 # Maximum length of a recording, in seconds
 max_seconds = 120
 
+# Stack Overflow "The Key" 3-key keyboard: when it is plugged in, its buttons start the dictation (hold or toggle, like the hotkey).
+# Actions per button: full (normal: AI as the app requires + Enter), raw_send (no AI + Enter), raw (no AI, no Enter),
+# ai (AI, no Enter), off. Also changeable from Settings, where the section only appears while the keyboard is connected.
+macropad = true
+macropad_logo = "full"
+macropad_c = "raw_send"
+macropad_v = "raw"
+# If the keyboard is not recognised by its name, add its USB ids here, e.g. macropad_ids = ["16c0:27db"]
+macropad_ids = []
+
 # Automatic updates (they also need the GitHub token and the installer: see the README). Also changeable from Settings.
 auto_update = true
 

@@ -65,6 +65,49 @@ component Card inherits Rectangle {
     }
 }
 
+// Omaggio a Stack Overflow: tre barre impilate (un impilamento di risposte) e un ringraziamento. Non e' il logo ufficiale.
+component PadTribute inherits Rectangle {
+    border-radius: 6px;
+    background: #f4802422;
+    min-height: row.min-height + 20px;
+    row := HorizontalLayout {
+        padding: 10px;
+        spacing: 12px;
+        Rectangle {
+            width: 28px;
+            for i in 4: Rectangle {
+                x: 2px + i * 1px;
+                y: 20px - i * 6px;
+                width: 22px - i * 2px;
+                height: 4px;
+                border-radius: 2px;
+                background: i == 3 ? #bcbbbb : #f48024;
+            }
+        }
+        VerticalLayout {
+            spacing: 3px;
+            Text { text: Tr.pad_tribute_title; font-size: 14px; font-weight: 600; color: Palette.foreground; }
+            Text { text: Tr.pad_tribute_text; wrap: word-wrap; font-size: 12px; color: Palette.foreground.with-alpha(0.85); }
+        }
+    }
+}
+
+component PadRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <[string]> choices;
+    in property <int> index;
+    in property <bool> active: true;
+    callback selected(int);
+    spacing: 12px;
+    Text { text: root.label; width: 150px; vertical-alignment: center; color: Palette.foreground; font-size: 13px; }
+    ComboBox {
+        model: root.choices;
+        current-index: root.index;
+        enabled: root.active;
+        selected(_) => { root.selected(self.current-index); }
+    }
+}
+
 component Title inherits Text {
     font-size: 22px;
     font-weight: 600;
@@ -299,6 +342,13 @@ export component SettingsWindow inherits Window {
     in-out property <bool> debug;
     in-out property <bool> debug-text;
     in-out property <bool> sounds;
+    // tastiera Stack Overflow a 3 tasti: la scheda compare solo se e' collegata
+    in property <bool> pad-present;
+    in property <string> pad-name;
+    in-out property <bool> pad-enabled;
+    in property <int> pad-logo;
+    in property <int> pad-c;
+    in property <int> pad-v;
     in-out property <bool> echo-cancel;
     in property <bool> echo-available;
     in-out property <bool> autostart;
@@ -339,6 +389,8 @@ export component SettingsWindow inherits Window {
     callback check-update();
     callback apply-update();
     callback toggle-sounds(bool);
+    callback toggle-pad(bool);
+    callback set-pad-action(int, int);
     callback toggle-echo-cancel(bool);
     callback toggle-autostart(bool);
     callback set-sound-style(int);
@@ -506,6 +558,34 @@ export component SettingsWindow inherits Window {
                 if root.page == 3: VerticalLayout {
                     spacing: 10px;
                     Title { text: Tr.nav_settings; }
+                    if root.pad-present: Card { title: Tr.card_pad;
+                        PadTribute { }
+                        CheckBox { text: Tr.pad_check; checked: root.pad-enabled; toggled => { root.toggle-pad(self.checked); } }
+                        Note { text: Tr.pad_connected + " " + root.pad-name; }
+                        PadRow {
+                            label: Tr.pad_btn_logo;
+                            choices: [Tr.pad_full, Tr.pad_raw_send, Tr.pad_raw, Tr.pad_ai, Tr.pad_off];
+                            index: root.pad-logo;
+                            active: root.pad-enabled;
+                            selected(i) => { root.set-pad-action(0, i); }
+                        }
+                        PadRow {
+                            label: Tr.pad_btn_c;
+                            choices: [Tr.pad_full, Tr.pad_raw_send, Tr.pad_raw, Tr.pad_ai, Tr.pad_off];
+                            index: root.pad-c;
+                            active: root.pad-enabled;
+                            selected(i) => { root.set-pad-action(1, i); }
+                        }
+                        PadRow {
+                            label: Tr.pad_btn_v;
+                            choices: [Tr.pad_full, Tr.pad_raw_send, Tr.pad_raw, Tr.pad_ai, Tr.pad_off];
+                            index: root.pad-v;
+                            active: root.pad-enabled;
+                            selected(i) => { root.set-pad-action(2, i); }
+                        }
+                        Note { text: Tr.pad_note; }
+                        Note { text: Tr.pad_disclaimer; font-size: 11px; }
+                    }
                     Card { title: Tr.card_startup;
                         CheckBox { text: root.linux ? Tr.autostart_linux : Tr.autostart_windows; checked: root.autostart; toggled => { root.toggle-autostart(self.checked); } }
                     }

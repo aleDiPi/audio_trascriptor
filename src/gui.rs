@@ -478,6 +478,14 @@ fn refresh(win: &SettingsWindow) {
         win.set_usage_text(usage_text.into());
     }
     win.set_overlay(config::overlay_enabled());
+    // la scheda della tastiera Stack Overflow compare solo mentre e' collegata; le scelte si leggono dal file
+    // quando la scheda appare, cosi' il timer non sposta i menu mentre li si usa
+    let pad_now = crate::macropad::present();
+    if pad_now && !win.get_pad_present() {
+        set_pad_choices(win, &cfg);
+    }
+    win.set_pad_present(pad_now);
+    win.set_pad_name(crate::macropad::name().into());
     win.set_debug(config::debug_enabled());
     win.set_debug_text(cfg.debug_log_text);
     win.set_auto_update(config::auto_update_enabled());
@@ -490,6 +498,14 @@ fn refresh(win: &SettingsWindow) {
         )
         .into(),
     );
+}
+
+fn set_pad_choices(win: &SettingsWindow, cfg: &config::Config) {
+    use crate::macropad::{action_for, Slot};
+    win.set_pad_enabled(cfg.macropad);
+    win.set_pad_logo(action_for(Slot::Logo, &cfg.macropad_logo, &cfg.macropad_c, &cfg.macropad_v).index());
+    win.set_pad_c(action_for(Slot::C, &cfg.macropad_logo, &cfg.macropad_c, &cfg.macropad_v).index());
+    win.set_pad_v(action_for(Slot::V, &cfg.macropad_logo, &cfg.macropad_c, &cfg.macropad_v).index());
 }
 
 fn refresh_in_loop(weak: &slint::Weak<SettingsWindow>) {
@@ -712,6 +728,14 @@ fn wire(win: &SettingsWindow) {
 
     win.on_toggle_overlay(config::set_overlay);
     win.on_toggle_sounds(config::set_sounds);
+    win.on_toggle_pad(|on| {
+        config::set_macropad(on);
+        crate::refresh_pad();
+    });
+    win.on_set_pad_action(|slot, i| {
+        let slot = crate::macropad::SLOTS.get(slot.max(0) as usize).copied().unwrap_or(crate::macropad::Slot::Logo);
+        config::set_macropad_action(slot, crate::macropad::Action::from_index(i));
+    });
     win.on_toggle_echo_cancel(config::set_echo_cancel);
     win.on_toggle_autostart(platform::set_autostart);
     win.on_set_sound_style(|i| {

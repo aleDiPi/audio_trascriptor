@@ -44,6 +44,10 @@ unsafe extern "system" fn proc_(code: i32, w: usize, l: isize) -> isize {
             let w = w as u32;
             let down = w == WM_KEYDOWN || w == WM_SYSKEYDOWN;
             let up = w == WM_KEYUP || w == WM_SYSKEYUP;
+            // tasti della tastiera Stack Overflow: non devono arrivare all'applicazione ne' alla scorciatoia
+            if (down || up) && crate::pad_windows::swallow(k.vkCode, down) {
+                return 1;
+            }
             if (down || up) && handle(k.vkCode, down) {
                 return 1;
             }
