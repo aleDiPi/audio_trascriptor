@@ -3,7 +3,7 @@
 //! Il filtro a basso livello (hotkey_windows.rs) chiede qui se un tasto appena premuto viene dalla tastiera Stack
 //! Overflow: in tal caso lo "mangia", cosi' Ctrl, C e V non arrivano all'applicazione in primo piano.
 
-use crate::macropad::{self, Key};
+use crate::macropad;
 use crate::config;
 use std::collections::HashMap;
 use std::ptr::{null, null_mut};
@@ -18,14 +18,12 @@ use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WM_RESCAN: u32 = WM_APP + 10;
-/// Quanto a lungo un tasto della tastiera Stack Overflow resta "in attesa" del filtro a basso livello.
-const MATCH_WINDOW: Duration = Duration::from_millis(150);
 /// Attesa massima del filtro per sapere da quale tastiera arriva un tasto (solo Ctrl/C/V, solo con la tastiera collegata).
-const HOOK_WAIT: Duration = Duration::from_millis(4);
+const HOOK_WAIT: Duration = Duration::from_millis(12);
 
 static HWND_SELF: AtomicIsize = AtomicIsize::new(0);
 static KNOWN: Mutex<Option<HashMap<isize, (bool, String)>>> = Mutex::new(None);
-static LAST: Mutex<Option<(Key, bool, Instant)>> = Mutex::new(None);
+static RECENT: Mutex<Option<macropad::Recent>> = Mutex::new(None);
 
 fn w(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -182,7 +180,7 @@ unsafe fn on_input(lp: LPARAM) {
     let kb = raw.data.keyboard;
     let down = kb.Flags & 1 == 0; // RI_KEY_BREAK = 1
     let Some(key) = macropad::key_for_vk(kb.VKey as u32) else { return };
-    *LAST.lock().unwrap() = Some((key, down, Instant::now()));
+    RECENT.lock().unwrap().get_or_insert_with(macropad::Recent::default).push(key, down, Instant::now());
     macropad::feed_key(key, down);
 }
 
@@ -192,14 +190,11 @@ pub fn swallow(vk: u32, down: bool) -> bool {
         return false;
     }
     let Some(key) = macropad::key_for_vk(vk) else { return false };
-    let matches = || {
-        LAST.lock().unwrap().as_ref().map_or(false, |(k, d, t)| *k == key && *d == down && t.elapsed() < MATCH_WINDOW)
-    };
+    let matches = || RECENT.lock().unwrap().get_or_insert_with(macropad::Recent::default).take(key, down, Instant::now());
     // il messaggio raw input puo' arrivare un attimo dopo il filtro: si aspetta pochissimo
     let start = Instant::now();
     loop {
         if matches() {
-            *LAST.lock().unwrap() = None;
             return true;
         }
         if start.elapsed() >= HOOK_WAIT {
