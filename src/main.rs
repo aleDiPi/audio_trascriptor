@@ -168,8 +168,14 @@ mod app {
             })
         };
         hotkey::install(ev_tx.clone());
+        macropad::set_sink({
+            let tx = Mutex::new(ev_tx.clone());
+            Box::new(move |slot, down| {
+                let _ = tx.lock().unwrap().send(Event::Pad(slot, down));
+            })
+        });
         #[cfg(windows)]
-        pad_windows::start(ev_tx.clone());
+        pad_windows::start();
         overlay::start();
         updater::start_background();
         std::thread::spawn({
@@ -205,6 +211,8 @@ mod app {
         let mut rec: Option<Rec> = None;
         let mut pad_slot: Option<macropad::Slot> = None; // pulsante che ha avviato la registrazione
         let mut pad_action: Option<macropad::Action> = None;
+        let mut pad_down_at: Option<std::time::Instant> = None;
+        let mut pad_sticky = false; // tocco breve: la registrazione continua fino al tocco successivo
         while let Ok(ev) = rx.recv() {
             match ev {
                 Event::Reload => {
@@ -223,17 +231,27 @@ mod app {
                     config::debug(|| format!("pad button {slot:?} {} (action {}, recording: {})", if down { "down" } else { "up" }, action.id(), rec.is_some()));
                     if down {
                         if rec.is_some() {
-                            if cfg.is_toggle() {
+                            // un secondo tocco ferma la registrazione (modalita' "tocco" o "alterna")
+                            if pad_sticky || cfg.is_toggle() {
                                 finish(&mut rec, &cfg, &notify, pad_action.take());
                                 pad_slot = None;
+                                pad_sticky = false;
                             }
                         } else if action != macropad::Action::Off && start_recording(&mut rec, &notify, &cfg) {
                             pad_slot = Some(slot);
                             pad_action = Some(action);
+                            pad_down_at = Some(std::time::Instant::now());
+                            pad_sticky = false;
                         }
-                    } else if !cfg.is_toggle() && rec.is_some() && pad_slot == Some(slot) {
-                        finish(&mut rec, &cfg, &notify, pad_action.take());
-                        pad_slot = None;
+                    } else if !cfg.is_toggle() && rec.is_some() && pad_slot == Some(slot) && !pad_sticky {
+                        // i tasti della tastiera inviano un colpo istantaneo: un tocco breve avvia e il successivo ferma,
+                        // tenendo premuto (logo) si registra finche' si tiene premuto
+                        if pad_down_at.map_or(false, |t| macropad::is_tap(t.elapsed())) {
+                            pad_sticky = true;
+                        } else {
+                            finish(&mut rec, &cfg, &notify, pad_action.take());
+                            pad_slot = None;
+                        }
                     }
                 }
                 Event::HotkeyDown => {
@@ -246,6 +264,7 @@ mod app {
                     } else if start_recording(&mut rec, &notify, &cfg) {
                         pad_slot = None;
                         pad_action = None;
+                        pad_sticky = false;
                     }
                 }
                 Event::HotkeyUp => {
