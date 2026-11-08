@@ -198,6 +198,9 @@ impl Recent {
     }
 }
 
+/// Due pressioni dello stesso pulsante piu' vicine di cosi' sono un'unica pressione (la tastiera a volte ripete il colpo).
+pub const DEBOUNCE: Duration = Duration::from_millis(300);
+
 /// Un pulsante rilasciato prima di questo tempo e' un "tocco": la registrazione continua fino al tocco successivo.
 pub const TAP_MAX: Duration = Duration::from_millis(350);
 
@@ -215,6 +218,8 @@ pub struct Chords {
     logo_active: bool,
     letters: [bool; 2],
     direct: [bool; 3],
+    last_down: [Option<Instant>; 3],
+    ignored: [bool; 3],
 }
 
 impl Chords {
@@ -228,6 +233,31 @@ impl Chords {
 
     /// Un tasto fisico premuto o rilasciato; restituisce le pressioni/rilasci dei pulsanti che ne derivano.
     pub fn feed(&mut self, key: Key, down: bool, now: Instant) -> Vec<(Slot, bool)> {
+        let raw = self.feed_raw(key, down, now);
+        self.debounce(raw, now)
+    }
+
+    /// Alcune pressioni della tastiera arrivano doppie a pochi millisecondi: la seconda non conta.
+    fn debounce(&mut self, list: Vec<(Slot, bool)>, now: Instant) -> Vec<(Slot, bool)> {
+        let mut out = Vec::new();
+        for (slot, down) in list {
+            let i = SLOTS.iter().position(|s| *s == slot).unwrap_or(0);
+            if down {
+                if self.last_down[i].map_or(false, |t| now.duration_since(t) < DEBOUNCE) {
+                    self.ignored[i] = true;
+                    continue;
+                }
+                self.last_down[i] = Some(now);
+                self.ignored[i] = false;
+                out.push((slot, true));
+            } else if !std::mem::replace(&mut self.ignored[i], false) {
+                out.push((slot, false));
+            }
+        }
+        out
+    }
+
+    fn feed_raw(&mut self, key: Key, down: bool, now: Instant) -> Vec<(Slot, bool)> {
         let mut out = Vec::new();
         match (key, down) {
             (Key::Ctrl, true) => {
@@ -275,14 +305,15 @@ impl Chords {
 
     /// Da chiamare dopo `CHORD_WINDOW` da un Ctrl: se non e' arrivata nessuna lettera, il logo e' premuto (tenuto).
     pub fn expire(&mut self, now: Instant) -> Vec<(Slot, bool)> {
-        match self.pending {
+        let raw = match self.pending {
             Some(t) if now.duration_since(t) >= CHORD_WINDOW => {
                 self.pending = None;
                 self.logo_active = true;
                 vec![(Slot::Logo, true)]
             }
             _ => Vec::new(),
-        }
+        };
+        self.debounce(raw, now)
     }
 
     pub fn has_pending(&self) -> bool {
@@ -450,6 +481,23 @@ mod tests {
         assert!(!r.take(Key::V, true, t));
         assert!(!r.take(Key::C, false, t));
         assert!(!r.take(Key::C, true, t + Recent::WINDOW * 2));
+    }
+
+    #[test]
+    fn a_doubled_hit_counts_once_but_a_later_press_counts_again() {
+        let (mut c, t) = (Chords::default(), t0());
+        let hit = |c: &mut Chords, at: Instant| {
+            let mut out = c.feed(Key::Ctrl, true, at);
+            out.extend(c.feed(Key::V, true, at));
+            out.extend(c.feed(Key::V, false, at));
+            out.extend(c.feed(Key::Ctrl, false, at));
+            out
+        };
+        assert_eq!(hit(&mut c, t), vec![(Slot::V, true), (Slot::V, false)]);
+        // stesso colpo ripetuto subito: ignorato, pressione e rilascio
+        assert!(hit(&mut c, t + Duration::from_millis(5)).is_empty());
+        // una pressione vera, piu' tardi
+        assert_eq!(hit(&mut c, t + Duration::from_secs(2)), vec![(Slot::V, true), (Slot::V, false)]);
     }
 
     #[test]

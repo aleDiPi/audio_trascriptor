@@ -4,11 +4,18 @@ By default the three keys send Ctrl, C and V. This keymap makes them send **F13,
 Windows and normal programs never use), so Trascrittore audio can use them without clashing with anything.
 The program understands both the factory keys and F13-F15, so reprogramming is optional.
 
+## LEDs
+
+The keymap keeps the LED settings of Drop's `rgb-control` keymap: press the **C and V keys together** to open the
+LED pages (on/off + effect, brightness, hue, saturation); the first key moves to the next page, the other two change
+the setting. After the last page you are back to normal use. Settings are saved in the keyboard.
+
 ## How to flash it (about 10 minutes)
 
-1. Open the [QMK Configurator](https://config.qmk.fm/), choose the keyboard `drop/thekey/v2`, set the three keys to
+1. Easiest: use the ready-made firmware (build it with the QMK command line from the files in this folder,
+   see below). Or open the [QMK Configurator](https://config.qmk.fm/), choose the keyboard `drop/thekey/v2`, set the three keys to
    `F13`, `F14`, `F15` (left to right), then *Compile* and download the `.hex` file.
-   (Or, with the QMK command line: copy `keymap.c` to `keyboards/drop/thekey/v2/keymaps/trascrittore/` and run
+   (With the QMK command line: copy `keymap.c`, `config.h` and `rules.mk` to `keyboards/drop/thekey/v2/keymaps/trascrittore/` and run
    `qmk compile -kb drop/thekey/v2 -km trascrittore`.)
 2. Install [QMK Toolbox](https://github.com/qmk/qmk_toolbox/releases), open the `.hex`; the MCU must read `atmega32u4`.
 3. Put the keyboard in bootloader mode: unscrew the back and press the small button on the board while it is
