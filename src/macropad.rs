@@ -3,7 +3,8 @@
 //! Di fabbrica i tre tasti inviano Ctrl, C e V: il programma li distingue dalla tastiera normale in base al dispositivo.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 /// Tasto fisico inviato dalla tastiera (di fabbrica: Ctrl, C, V).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,30 +157,129 @@ pub fn is_pad(name: &str, ids: Option<(u16, u16)>, extra: &[String]) -> bool {
     ids.map_or(false, |id| extra.iter().filter_map(|s| parse_id(s)).any(|e| e == id))
 }
 
-/// Toglie le ripetizioni automatiche: ogni pulsante produce un solo "giu'" e un solo "su'".
-#[derive(Default)]
-pub struct Edges {
-    down: [bool; 3],
+/// Il logo invia Ctrl e C/V inviano Ctrl+C / Ctrl+V in un attimo: dopo un Ctrl si aspetta un momento per capire
+/// se arriva una lettera (allora il pulsante e' C o V) oppure no (allora e' il logo, anche tenuto premuto).
+pub const CHORD_WINDOW: Duration = Duration::from_millis(60);
+
+/// Un pulsante rilasciato prima di questo tempo e' un "tocco": la registrazione continua fino al tocco successivo.
+pub const TAP_MAX: Duration = Duration::from_millis(350);
+
+/// Il pulsante e' stato solo toccato (rilasciato subito)?
+pub fn is_tap(held: Duration) -> bool {
+    held < TAP_MAX
 }
 
-impl Edges {
-    fn pos(slot: Slot) -> usize {
-        SLOTS.iter().position(|s| *s == slot).unwrap_or(0)
-    }
+/// Macchina a stati dei tasti della tastiera: trasforma tasti fisici in pressioni/rilasci dei tre pulsanti.
+#[derive(Default)]
+pub struct Chords {
+    ctrl_down: bool,
+    /// Ctrl premuto da poco, ancora senza lettera: istante della pressione
+    pending: Option<Instant>,
+    logo_active: bool,
+    letters: [bool; 2],
+}
 
-    /// `Some(true)` = pressione, `Some(false)` = rilascio, `None` = ripetizione da ignorare.
-    pub fn feed(&mut self, slot: Slot, down: bool) -> Option<bool> {
-        let d = &mut self.down[Self::pos(slot)];
-        if *d == down {
-            return None;
+impl Chords {
+    fn letter(slot: Slot) -> Option<usize> {
+        match slot {
+            Slot::C => Some(0),
+            Slot::V => Some(1),
+            Slot::Logo => None,
         }
-        *d = down;
-        Some(down)
     }
 
-    pub fn clear(&mut self) {
-        self.down = [false; 3];
+    /// Un tasto fisico premuto o rilasciato; restituisce le pressioni/rilasci dei pulsanti che ne derivano.
+    pub fn feed(&mut self, key: Key, down: bool, now: Instant) -> Vec<(Slot, bool)> {
+        let mut out = Vec::new();
+        match (key, down) {
+            (Key::Ctrl, true) => {
+                if !self.ctrl_down {
+                    self.ctrl_down = true;
+                    self.pending = Some(now);
+                }
+            }
+            (Key::Ctrl, false) => {
+                self.ctrl_down = false;
+                if self.pending.take().is_some() {
+                    // tocco brevissimo del logo, senza lettera
+                    out.push((Slot::Logo, true));
+                    out.push((Slot::Logo, false));
+                } else if std::mem::replace(&mut self.logo_active, false) {
+                    out.push((Slot::Logo, false));
+                }
+            }
+            (k, down) => {
+                let slot = k.slot();
+                let Some(i) = Self::letter(slot) else { return out };
+                if down {
+                    self.pending = None; // il Ctrl faceva parte del colpo: non e' il logo
+                    if !self.letters[i] {
+                        self.letters[i] = true;
+                        out.push((slot, true));
+                    }
+                } else if std::mem::replace(&mut self.letters[i], false) {
+                    out.push((slot, false));
+                }
+            }
+        }
+        out
     }
+
+    /// Da chiamare dopo `CHORD_WINDOW` da un Ctrl: se non e' arrivata nessuna lettera, il logo e' premuto (tenuto).
+    pub fn expire(&mut self, now: Instant) -> Vec<(Slot, bool)> {
+        match self.pending {
+            Some(t) if now.duration_since(t) >= CHORD_WINDOW => {
+                self.pending = None;
+                self.logo_active = true;
+                vec![(Slot::Logo, true)]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn has_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+}
+
+type Sink = Box<dyn Fn(Slot, bool) + Send + Sync>;
+static SINK: OnceLock<Sink> = OnceLock::new();
+static CHORDS: Mutex<Option<Chords>> = Mutex::new(None);
+
+/// Dove inviare le pressioni dei pulsanti (il programma principale ne fa eventi).
+pub fn set_sink(f: Sink) {
+    let _ = SINK.set(f);
+}
+
+fn emit(list: Vec<(Slot, bool)>) {
+    if let Some(sink) = SINK.get() {
+        for (slot, down) in list {
+            sink(slot, down);
+        }
+    }
+}
+
+/// Un tasto fisico della tastiera Stack Overflow e' stato premuto o rilasciato.
+pub fn feed_key(key: Key, down: bool) {
+    let (out, wait) = {
+        let mut g = CHORDS.lock().unwrap();
+        let c = g.get_or_insert_with(Chords::default);
+        let out = c.feed(key, down, Instant::now());
+        (out, c.has_pending())
+    };
+    emit(out);
+    if wait && key == Key::Ctrl && down {
+        std::thread::spawn(|| {
+            std::thread::sleep(CHORD_WINDOW + Duration::from_millis(10));
+            let out = CHORDS.lock().unwrap().get_or_insert_with(Chords::default).expire(Instant::now());
+            emit(out);
+        });
+    }
+}
+
+/// Dimentica lo stato dei tasti (tastiera scollegata o riesaminata).
+pub fn reset_keys() {
+    *CHORDS.lock().unwrap() = None;
 }
 
 static PRESENT: AtomicBool = AtomicBool::new(false);
@@ -271,12 +371,60 @@ mod tests {
     }
 
     #[test]
-    fn key_repeat_is_ignored() {
-        let mut e = Edges::default();
-        assert_eq!(e.feed(Slot::C, true), Some(true));
-        assert_eq!(e.feed(Slot::C, true), None);
-        assert_eq!(e.feed(Slot::V, true), Some(true));
-        assert_eq!(e.feed(Slot::C, false), Some(false));
-        assert_eq!(e.feed(Slot::C, false), None);
+    fn short_presses_are_taps_and_long_ones_are_holds() {
+        assert!(is_tap(Duration::from_millis(5)));
+        assert!(!is_tap(Duration::from_millis(800)));
+    }
+
+    fn t0() -> Instant {
+        Instant::now()
+    }
+
+    #[test]
+    fn ctrl_c_chord_is_the_c_button_and_not_the_logo() {
+        let (mut c, t) = (Chords::default(), t0());
+        assert!(c.feed(Key::Ctrl, true, t).is_empty());
+        assert_eq!(c.feed(Key::C, true, t), vec![(Slot::C, true)]);
+        assert_eq!(c.feed(Key::C, false, t), vec![(Slot::C, false)]);
+        assert!(c.feed(Key::Ctrl, false, t).is_empty());
+        // la scadenza non fa nulla: il Ctrl era parte del colpo
+        assert!(c.expire(t + CHORD_WINDOW * 2).is_empty());
+    }
+
+    #[test]
+    fn ctrl_v_chord_is_the_v_button() {
+        let (mut c, t) = (Chords::default(), t0());
+        c.feed(Key::Ctrl, true, t);
+        assert_eq!(c.feed(Key::V, true, t), vec![(Slot::V, true)]);
+        assert_eq!(c.feed(Key::V, false, t), vec![(Slot::V, false)]);
+        assert!(c.feed(Key::Ctrl, false, t).is_empty());
+    }
+
+    #[test]
+    fn held_ctrl_alone_becomes_the_logo_after_the_window() {
+        let (mut c, t) = (Chords::default(), t0());
+        assert!(c.feed(Key::Ctrl, true, t).is_empty());
+        assert!(c.expire(t + CHORD_WINDOW / 2).is_empty());
+        assert_eq!(c.expire(t + CHORD_WINDOW), vec![(Slot::Logo, true)]);
+        assert!(c.expire(t + CHORD_WINDOW * 3).is_empty());
+        assert_eq!(c.feed(Key::Ctrl, false, t), vec![(Slot::Logo, false)]);
+    }
+
+    #[test]
+    fn quick_tap_of_ctrl_alone_is_a_logo_press_and_release() {
+        let (mut c, t) = (Chords::default(), t0());
+        c.feed(Key::Ctrl, true, t);
+        assert_eq!(c.feed(Key::Ctrl, false, t), vec![(Slot::Logo, true), (Slot::Logo, false)]);
+    }
+
+    #[test]
+    fn repeats_and_plain_letters_are_handled() {
+        let (mut c, t) = (Chords::default(), t0());
+        assert_eq!(c.feed(Key::C, true, t), vec![(Slot::C, true)]);
+        assert!(c.feed(Key::C, true, t).is_empty()); // ripetizione automatica
+        assert_eq!(c.feed(Key::C, false, t), vec![(Slot::C, false)]);
+        assert!(c.feed(Key::C, false, t).is_empty());
+        c.feed(Key::Ctrl, true, t);
+        assert!(c.feed(Key::Ctrl, true, t).is_empty());
     }
 }

@@ -3,13 +3,12 @@
 //! Il filtro a basso livello (hotkey_windows.rs) chiede qui se un tasto appena premuto viene dalla tastiera Stack
 //! Overflow: in tal caso lo "mangia", cosi' Ctrl, C e V non arrivano all'applicazione in primo piano.
 
-use crate::macropad::{self, Edges, Key};
-use crate::{config, Event};
+use crate::macropad::{self, Key};
+use crate::config;
 use std::collections::HashMap;
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicIsize, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Devices::HumanInterfaceDevice::HidD_GetProductString;
 use windows_sys::Win32::Foundation::*;
@@ -25,10 +24,8 @@ const MATCH_WINDOW: Duration = Duration::from_millis(150);
 const HOOK_WAIT: Duration = Duration::from_millis(4);
 
 static HWND_SELF: AtomicIsize = AtomicIsize::new(0);
-static TX: OnceLock<Sender<Event>> = OnceLock::new();
 static KNOWN: Mutex<Option<HashMap<isize, (bool, String)>>> = Mutex::new(None);
 static LAST: Mutex<Option<(Key, bool, Instant)>> = Mutex::new(None);
-static EDGES: Mutex<Option<Edges>> = Mutex::new(None);
 
 fn w(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -109,9 +106,7 @@ fn rescan() {
             }
         }
     }
-    if let Some(e) = EDGES.lock().unwrap().as_mut() {
-        e.clear();
-    }
+    macropad::reset_keys();
     macropad::set_present(found.is_some(), found.as_deref().unwrap_or(""));
 }
 
@@ -124,8 +119,7 @@ pub fn refresh_pad() {
 }
 
 /// Avvia il thread con la finestra invisibile che riceve i messaggi raw input (a riposo non usa CPU).
-pub fn start(tx: Sender<Event>) {
-    let _ = TX.set(tx);
+pub fn start() {
     std::thread::spawn(|| unsafe {
         let class = w("TrascrittorePad");
         let hinst = GetModuleHandleW(null());
@@ -148,7 +142,6 @@ pub fn start(tx: Sender<Event>) {
             return;
         }
         HWND_SELF.store(hwnd as isize, Ordering::Release);
-        *EDGES.lock().unwrap() = Some(Edges::default());
         // tastiere (pagina 1, uso 6): INPUTSINK = anche quando l'app non e' in primo piano; DEVNOTIFY = collegamenti e scollegamenti
         let rid = RAWINPUTDEVICE { usUsagePage: 1, usUsage: 6, dwFlags: RIDEV_INPUTSINK | RIDEV_DEVNOTIFY, hwndTarget: hwnd };
         if RegisterRawInputDevices(&rid, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32) == 0 {
@@ -190,10 +183,7 @@ unsafe fn on_input(lp: LPARAM) {
     let down = kb.Flags & 1 == 0; // RI_KEY_BREAK = 1
     let Some(key) = macropad::key_for_vk(kb.VKey as u32) else { return };
     *LAST.lock().unwrap() = Some((key, down, Instant::now()));
-    let edge = EDGES.lock().unwrap().as_mut().and_then(|e| e.feed(key.slot(), down));
-    if let (Some(edge), Some(tx)) = (edge, TX.get()) {
-        let _ = tx.send(Event::Pad(key.slot(), edge));
-    }
+    macropad::feed_key(key, down);
 }
 
 /// Chiamata dal filtro a basso livello per ogni tasto: true = viene dalla tastiera Stack Overflow, va "mangiato".

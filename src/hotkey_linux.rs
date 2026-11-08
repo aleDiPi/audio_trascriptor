@@ -211,7 +211,6 @@ fn listen() -> Result<(), String> {
     let mut tracker = Tracker::default();
     let mut pad = scan_pad(&conn, root, &PadDevices::default());
     let mut pad_codes = platform::resolve_keycodes(&conn, &[KS_CONTROL, 0xffe4, 0x63, 0x43, 0x76, 0x56]);
-    let mut pad_edges = macropad::Edges::default();
     loop {
         let (keycode, down, source) = match conn.wait_for_event().map_err(|e| format!("X11 connection lost: {e}"))? {
             XEvent::XinputRawKeyPress(e) => (e.detail, true, e.sourceid),
@@ -220,7 +219,7 @@ fn listen() -> Result<(), String> {
                 // dispositivo collegato/scollegato oppure impostazione cambiata
                 pad = scan_pad(&conn, root, &pad);
                 pad_codes = platform::resolve_keycodes(&conn, &[KS_CONTROL, 0xffe4, 0x63, 0x43, 0x76, 0x56]);
-                pad_edges.clear();
+                macropad::reset_keys();
                 continue;
             }
             _ => continue,
@@ -229,11 +228,7 @@ fn listen() -> Result<(), String> {
         if pad.ids.contains(&source) {
             // tasti della tastiera Stack Overflow: non fanno parte della scorciatoia normale
             if let Some(key) = pad_key(keycode, &pad_codes) {
-                if let Some(edge) = pad_edges.feed(key.slot(), down) {
-                    if let Some(tx) = TX.get() {
-                        let _ = tx.send(Event::Pad(key.slot(), edge));
-                    }
-                }
+                macropad::feed_key(key, down);
             }
             continue;
         }
