@@ -20,6 +20,7 @@ struct Tray {
     m_cfg: MenuItem,
     m_log: MenuItem,
     m_reload: MenuItem,
+    m_restart: MenuItem,
     m_quit: MenuItem,
     lang_seen: std::cell::Cell<u32>,
     ids: Ids,
@@ -32,6 +33,7 @@ struct Ids {
     log: MenuId,
     cfg: MenuId,
     reload: MenuId,
+    restart: MenuId,
     quit: MenuId,
 }
 
@@ -60,6 +62,7 @@ fn refresh(tr: &Tray) {
         tr.m_dbg.set_text(t("tray.debug"));
         tr.m_log.set_text(t("tray.open_log"));
         tr.m_reload.set_text(t("tray.reload"));
+        tr.m_restart.set_text(t("tray.restart"));
         tr.m_quit.set_text(t("tray.quit"));
     }
     while let Ok((state, text)) = tr.ui_rx.try_recv() {
@@ -87,6 +90,10 @@ fn on_menu(id: &MenuId) {
             config::open_log();
         } else if *id == i.cfg {
             platform::open(config::dir());
+        } else if *id == i.restart {
+            if crate::restart::spawn_new() {
+                gtk::main_quit();
+            }
         } else if *id == i.reload {
             let _ = t.ev_tx.send(Event::Reload);
         }
@@ -104,9 +111,10 @@ pub fn run(cfg: &config::Config, ev_tx: Sender<Event>, ui_rx: Receiver<(Ui, Stri
     let m_dbg = CheckMenuItem::new(t("tray.debug"), true, cfg.debug, None);
     let m_log = MenuItem::new(t("tray.open_log"), true, None);
     let m_reload = MenuItem::new(t("tray.reload"), true, None);
+    let m_restart = MenuItem::new(t("tray.restart"), true, None);
     let m_quit = MenuItem::new(t("tray.quit"), true, None);
     let menu = Menu::new();
-    let _ = menu.append_items(&[&m_set, &m_auto, &m_dbg, &m_log, &m_cfg, &m_reload, &PredefinedMenuItem::separator(), &m_quit]);
+    let _ = menu.append_items(&[&m_set, &m_auto, &m_dbg, &m_log, &m_cfg, &m_reload, &m_restart, &PredefinedMenuItem::separator(), &m_quit]);
     let tray = match TrayIconBuilder::new().with_menu(Box::new(menu)).with_title(idle_tip(&cfg.hotkey)).with_icon(icon(Ui::Idle)).build() {
         Ok(t) => t,
         Err(e) => {
@@ -121,10 +129,11 @@ pub fn run(cfg: &config::Config, ev_tx: Sender<Event>, ui_rx: Receiver<(Ui, Stri
         log: m_log.id().clone(),
         cfg: m_cfg.id().clone(),
         reload: m_reload.id().clone(),
+        restart: m_restart.id().clone(),
         quit: m_quit.id().clone(),
     };
     let lang_seen = std::cell::Cell::new(i18n::generation());
-    TRAY.with(|t| *t.borrow_mut() = Some(Tray { tray, ui_rx, ev_tx, m_auto, m_dbg, m_set, m_cfg, m_log, m_reload, m_quit, lang_seen, ids }));
+    TRAY.with(|t| *t.borrow_mut() = Some(Tray { tray, ui_rx, ev_tx, m_auto, m_dbg, m_set, m_cfg, m_log, m_reload, m_restart, m_quit, lang_seen, ids }));
     // gli eventi del menu arrivano dal ciclo GTK; la gestione torna comunque sul thread principale
     MenuEvent::set_event_handler(Some(|e: MenuEvent| {
         let id = e.id;
