@@ -26,10 +26,11 @@ pub fn run(cfg: &config::Config, ev_tx: Sender<Event>, ui_rx: Receiver<(Ui, Stri
     let m_dbg = CheckMenuItem::new(t("tray.debug"), true, cfg.debug, None);
     let m_log = MenuItem::new(t("tray.open_log"), true, None);
     let m_reload = MenuItem::new(t("tray.reload"), true, None);
+    let m_restart = MenuItem::new(t("tray.restart"), true, None);
     let m_quit = MenuItem::new(t("tray.quit"), true, None);
     let mut lang_seen = i18n::generation();
     let menu = Menu::new();
-    let _ = menu.append_items(&[&m_set, &m_auto, &m_dbg, &m_log, &m_cfg, &m_reload, &PredefinedMenuItem::separator(), &m_quit]);
+    let _ = menu.append_items(&[&m_set, &m_auto, &m_dbg, &m_log, &m_cfg, &m_reload, &m_restart, &PredefinedMenuItem::separator(), &m_quit]);
     let tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_menu_on_left_click(false)
@@ -56,6 +57,7 @@ pub fn run(cfg: &config::Config, ev_tx: Sender<Event>, ui_rx: Receiver<(Ui, Stri
                 m_dbg.set_text(t("tray.debug"));
                 m_log.set_text(t("tray.open_log"));
                 m_reload.set_text(t("tray.reload"));
+                m_restart.set_text(t("tray.restart"));
                 m_quit.set_text(t("tray.quit"));
             }
             while let Ok((state, text)) = ui_rx.try_recv() {
@@ -87,6 +89,10 @@ pub fn run(cfg: &config::Config, ev_tx: Sender<Event>, ui_rx: Receiver<(Ui, Stri
                 config::open_log();
             } else if e.id == *m_cfg.id() {
                 platform::open(config::dir());
+            } else if e.id == *m_restart.id() {
+                if crate::restart::spawn_new() {
+                    unsafe { PostQuitMessage(0) };
+                }
             } else if e.id == *m_reload.id() {
                 let _ = ev_tx.send(Event::Reload);
             }

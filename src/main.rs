@@ -76,6 +76,9 @@ mod platform;
 #[cfg(any(desktop, test))]
 #[cfg_attr(not(desktop), allow(dead_code))]
 mod release;
+#[cfg(any(desktop, test))]
+#[cfg_attr(not(desktop), allow(dead_code))]
+mod restart;
 #[cfg(desktop)]
 mod updater;
 #[cfg(any(desktop, test))]
@@ -138,7 +141,7 @@ mod app {
     use tray_icon::Icon;
 
     pub fn run() {
-        let after_update = std::env::args().any(|a| a == "--after-update");
+        let after_update = restart::waits_for_old(&std::env::args().collect::<Vec<_>>());
         if !platform::single_instance(after_update) {
             return;
         }

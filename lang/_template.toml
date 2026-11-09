@@ -183,6 +183,8 @@ debug = ""
 open_log = ""
 # Reload configuration
 reload = ""
+# Restart application
+restart = ""
 # Quit
 quit = ""
 # Trascrittore - ready ({hotkey})

@@ -59,7 +59,7 @@ pub fn serve(listener: UnixListener, on_show: impl Fn()) {
 
 /// Avvio "silenzioso": dall'avvio automatico o dopo un aggiornamento non si apre la finestra delle Impostazioni.
 pub fn quiet_start() -> bool {
-    std::env::args().any(|a| a == "--autostart" || a == "--after-update")
+    std::env::args().any(|a| a == "--autostart" || a == "--after-update" || a == crate::restart::FLAG)
 }
 
 /// Istanza unica: false se un'altra copia e' gia' in esecuzione. In quel caso, se la nuova copia e' stata
