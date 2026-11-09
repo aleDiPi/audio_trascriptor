@@ -7,3 +7,6 @@
 #define RGBLIGHT_DEFAULT_HUE 0
 #define RGBLIGHT_DEFAULT_SAT 255
 #define RGBLIGHT_DEFAULT_VAL 160
+
+// Time (ms) within which two keys count as a chord; also the small delay before a single key is sent.
+#define COMBO_TERM 40
