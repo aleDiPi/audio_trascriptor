@@ -18,6 +18,8 @@ use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WM_RESCAN: u32 = WM_APP + 10;
+const TIMER_REREGISTER: usize = 1;
+const REREGISTER_MS: u32 = 500;
 /// Attesa massima del filtro per sapere da quale tastiera arriva un tasto (solo Ctrl/C/V, solo con la tastiera collegata).
 const HOOK_WAIT: Duration = Duration::from_millis(12);
 
@@ -140,12 +142,13 @@ pub fn start() {
             return;
         }
         HWND_SELF.store(hwnd as isize, Ordering::Release);
-        // tastiere (pagina 1, uso 6): INPUTSINK = anche quando l'app non e' in primo piano; DEVNOTIFY = collegamenti e scollegamenti
-        let rid = RAWINPUTDEVICE { usUsagePage: 1, usUsage: 6, dwFlags: RIDEV_INPUTSINK | RIDEV_DEVNOTIFY, hwndTarget: hwnd };
-        if RegisterRawInputDevices(&rid, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32) == 0 {
+        if !register(hwnd) {
             config::log("Stack Overflow keyboard: raw input not available");
             return;
         }
+        // la registrazione vale per tutto il processo: la finestra delle Impostazioni (Slint/winit) registra le
+        // tastiere a modo suo e sostituirebbe la nostra, quindi la si rinnova a intervalli
+        SetTimer(hwnd, TIMER_REREGISTER, REREGISTER_MS, None);
         rescan();
         let mut msg: MSG = std::mem::zeroed();
         while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
@@ -153,6 +156,12 @@ pub fn start() {
             DispatchMessageW(&msg);
         }
     });
+}
+
+/// Tastiere (pagina 1, uso 6): INPUTSINK = anche quando l'app non e' in primo piano; DEVNOTIFY = collegamenti e scollegamenti.
+unsafe fn register(hwnd: HWND) -> bool {
+    let rid = RAWINPUTDEVICE { usUsagePage: 1, usUsage: 6, dwFlags: RIDEV_INPUTSINK | RIDEV_DEVNOTIFY, hwndTarget: hwnd };
+    RegisterRawInputDevices(&rid, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32) != 0
 }
 
 unsafe fn on_input(lp: LPARAM) {
@@ -209,6 +218,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_INPUT => {
             on_input(lp);
             DefWindowProcW(hwnd, msg, wp, lp)
+        }
+        WM_TIMER if wp == TIMER_REREGISTER => {
+            register(hwnd);
+            0
         }
         WM_INPUT_DEVICE_CHANGE | WM_RESCAN => {
             rescan();
