@@ -32,3 +32,8 @@ On first start the LEDs show a different colour on every LED across the whole ra
 
 Afterwards you can enter the bootloader again by holding the first key while plugging the cable in (bootmagic).
 The original behaviour (Ctrl, C, V) is restored by flashing the `default` keymap of the same keyboard.
+
+## LED key combinations
+
+Pressing two keys together changes the lighting (the single keys keep working, with a 40 ms delay):
+logo + C = next effect, logo + V = brightness (cycles), C + V = colour (hue).
