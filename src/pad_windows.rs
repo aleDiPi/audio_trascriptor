@@ -164,6 +164,22 @@ unsafe fn register(hwnd: HWND) -> bool {
     RegisterRawInputDevices(&rid, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32) != 0
 }
 
+/// La registrazione e' ancora la nostra? Registrare di nuovo con DEVNOTIFY fa ripartire le notifiche di tutti i
+/// dispositivi (e quindi una nuova lettura), perche' si rinnova solo se un'altra finestra l'ha sostituita.
+unsafe fn still_registered(hwnd: HWND) -> bool {
+    let size = std::mem::size_of::<RAWINPUTDEVICE>() as u32;
+    let mut n = 0u32;
+    GetRegisteredRawInputDevices(null_mut(), &mut n, size);
+    if n == 0 {
+        return false;
+    }
+    let mut list: Vec<RAWINPUTDEVICE> = vec![std::mem::zeroed(); n as usize];
+    if GetRegisteredRawInputDevices(list.as_mut_ptr(), &mut n, size) == u32::MAX {
+        return false;
+    }
+    list.iter().take(n as usize).any(|d| d.usUsagePage == 1 && d.usUsage == 6 && d.hwndTarget == hwnd && d.dwFlags & RIDEV_INPUTSINK != 0)
+}
+
 unsafe fn on_input(lp: LPARAM) {
     if !macropad::present() || !config::macropad_enabled() {
         return;
@@ -220,7 +236,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             DefWindowProcW(hwnd, msg, wp, lp)
         }
         WM_TIMER if wp == TIMER_REREGISTER => {
-            register(hwnd);
+            if !still_registered(hwnd) {
+                register(hwnd);
+            }
             0
         }
         WM_INPUT_DEVICE_CHANGE | WM_RESCAN => {
