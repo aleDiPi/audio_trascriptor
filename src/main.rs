@@ -67,6 +67,9 @@ mod sounds;
 #[cfg(any(desktop, test))]
 #[cfg_attr(not(desktop), allow(dead_code))]
 mod trayicon;
+#[cfg(any(desktop, test))]
+#[cfg_attr(not(desktop), allow(dead_code))]
+mod focus;
 #[cfg(windows)]
 #[path = "platform_windows.rs"]
 mod platform;
@@ -289,13 +292,14 @@ mod app {
             return false;
         }
         let (exe, title) = platform::foreground_app();
-        config::debug(|| format!("foreground app: '{exe}', title '{title}'"));
+        let target = platform::foreground_window();
+        config::debug(|| format!("foreground app: '{exe}', title '{title}', window {target}"));
         // il suono d'avvio non deve finire nella registrazione: si scartano i suoi millisecondi
         let played = sounds::play(sounds::Kind::Start);
         let skip_ms = if played > 0 { played + 120 } else { 0 };
         match audio::start(cfg.max_seconds, skip_ms, cfg.echo_cancel) {
             Ok(r) => {
-                *rec = Some((r, exe, title));
+                *rec = Some((r, exe, title, target));
                 updater::BUSY.store(true, std::sync::atomic::Ordering::Relaxed);
                 overlay::show_recording(platform::foreground_icon());
                 notify(Ui::Recording, crate::i18n::t("tray.tip_recording"));
@@ -333,10 +337,10 @@ mod app {
         });
     }
 
-    type Rec = (audio::Recorder, String, String); // recorder, exe, titolo
+    type Rec = (audio::Recorder, String, String, focus::Win); // recorder, exe, titolo, finestra di destinazione
 
     fn finish(rec: &mut Option<Rec>, cfg: &config::Config, notify: &Arc<dyn Fn(Ui, String) + Send + Sync>, pad: Option<macropad::Action>) {
-        let Some((r, exe, title)) = rec.take() else { return };
+        let Some((r, exe, title, target)) = rec.take() else { return };
         let wav = r.finish(); // il microfono e' gia' chiuso: il suono di fine non viene registrato
         sounds::play(sounds::Kind::End);
         let Some(wav) = wav else {
@@ -349,7 +353,7 @@ mod app {
         notify(Ui::Working, crate::i18n::t("tray.tip_working"));
         let (cfg, notify) = (cfg.clone(), notify.clone());
         std::thread::spawn(move || {
-            let result = process(wav, &cfg, &exe, &title, pad);
+            let result = process(wav, &cfg, &exe, &title, target, pad);
             updater::BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
             overlay::hide();
             match result {
@@ -366,7 +370,7 @@ mod app {
         usage::ApiError { provider: p.name(), status: 0, retry_after: None, msg }
     }
 
-    fn process(wav: Vec<u8>, cfg: &config::Config, exe: &str, title: &str, pad: Option<macropad::Action>) -> Result<(), String> {
+    fn process(wav: Vec<u8>, cfg: &config::Config, exe: &str, title: &str, target: focus::Win, pad: Option<macropad::Action>) -> Result<(), String> {
         let order = providers::parse_order(&cfg.providers);
         let stt_order = providers::stt_order(&order);
         config::debug(|| format!("sending audio: {} KB, language '{}', services in order {:?}", wav.len() / 1024, cfg.language, stt_order.iter().map(|p| p.name()).collect::<Vec<_>>()));
@@ -449,6 +453,6 @@ mod app {
         let paste = rule.map_or("ctrl+v", |r| if r.paste.is_empty() { "ctrl+v" } else { r.paste.as_str() });
         let send_enter = pad.and_then(|a| a.enter()).unwrap_or_else(|| rule.map_or(false, |r| r.send_enter));
         config::debug(|| format!("pasting {} characters ({paste}, enter: {send_enter})", final_text.chars().count()));
-        platform::paste_text(&final_text, paste, cfg.restore_clipboard, send_enter)
+        platform::paste_text(&final_text, paste, cfg.restore_clipboard, send_enter, target)
     }
 }

@@ -8,7 +8,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{Atom, AtomEnum, ConnectionExt as _, Window};
+use x11rb::protocol::xproto::{Atom, AtomEnum, ClientMessageEvent, ConnectionExt as _, EventMask, Window};
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::rust_connection::RustConnection;
 
@@ -290,13 +290,44 @@ fn with_clipboard<T>(f: impl FnOnce(&mut arboard::Clipboard) -> T) -> Option<T> 
     guard.as_mut().map(f)
 }
 
-/// Incolla `text` nell'app in primo piano tramite appunti + scorciatoia di incolla.
-pub fn paste_text(text: &str, paste: &str, restore: bool, send_enter: bool) -> Result<(), String> {
+/// Finestra attiva (`_NET_ACTIVE_WINDOW`), 0 se non c'e' o il server non risponde.
+pub fn foreground_window() -> crate::focus::Win {
+    let Ok((conn, root)) = connect() else { return 0 };
+    prop32(&conn, root, "_NET_ACTIVE_WINDOW", AtomEnum::ANY).unwrap_or(0) as crate::focus::Win
+}
+
+fn window_exists(w: crate::focus::Win) -> bool {
+    let Ok((conn, _)) = connect() else { return false };
+    conn.get_window_attributes(w as u32).ok().and_then(|c| c.reply().ok()).is_some()
+}
+
+/// Chiede al gestore delle finestre di attivare `w` (messaggio `_NET_ACTIVE_WINDOW`, come farebbe un'applicazione).
+fn activate_window(w: crate::focus::Win) {
+    let Ok((conn, root)) = connect() else { return };
+    let Some(a) = atom(&conn, "_NET_ACTIVE_WINDOW") else { return };
+    let ev = ClientMessageEvent::new(32, w as u32, a, [1, 0, 0, 0, 0]);
+    let _ = conn.send_event(false, root, EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY, ev);
+    let _ = conn.flush();
+}
+
+/// Incolla `text` nella finestra `target` (quella attiva all'inizio della registrazione; 0 = quella attuale)
+/// tramite appunti + scorciatoia di incolla. Se la finestra non e' piu' raggiungibile non incolla da nessuna parte:
+/// il testo resta negli appunti.
+pub fn paste_text(text: &str, paste: &str, restore: bool, send_enter: bool, target: crate::focus::Win) -> Result<(), String> {
     let previous = if restore { with_clipboard(|c| c.get_text().ok()).flatten() } else { None };
     if with_clipboard(|c| c.set_text(text.to_string()).is_ok()) != Some(true) {
         return Err(crate::i18n::t("err.clipboard"));
     }
     std::thread::sleep(std::time::Duration::from_millis(40));
+    let focus = crate::focus::ensure(target, foreground_window, window_exists, activate_window, || {
+        std::thread::sleep(std::time::Duration::from_millis(50))
+    });
+    if focus == crate::focus::Outcome::Lost {
+        return Err(crate::i18n::t("err.paste_target_lost"));
+    }
+    if focus == crate::focus::Outcome::Restored {
+        std::thread::sleep(std::time::Duration::from_millis(100)); // l'app deve riprendere il focus interno
+    }
     send_keys(&paste_keys(paste))?;
     if send_enter {
         // lascia all'app il tempo di completare l'incolla, poi invia

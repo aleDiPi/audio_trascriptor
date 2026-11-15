@@ -196,13 +196,52 @@ fn key(vk: u16, up: bool) -> INPUT {
     }
 }
 
-/// Incolla `text` nell'app in primo piano tramite appunti + scorciatoia di incolla.
-pub fn paste_text(text: &str, paste: &str, restore: bool, send_enter: bool) -> Result<(), String> {
+/// Finestra in primo piano (HWND), 0 se non ce n'e'.
+pub fn foreground_window() -> crate::focus::Win {
+    unsafe { GetForegroundWindow() as usize as crate::focus::Win }
+}
+
+fn window_exists(w: crate::focus::Win) -> bool {
+    unsafe { IsWindow(w as usize as HWND) != 0 }
+}
+
+/// Riporta in primo piano `w`. Windows permette il cambio solo al thread che ha il focus: ci si "aggancia"
+/// temporaneamente al suo thread di input.
+fn activate_window(w: crate::focus::Win) {
+    unsafe {
+        let hwnd = w as usize as HWND;
+        if IsIconic(hwnd) != 0 {
+            ShowWindow(hwnd, SW_RESTORE);
+        }
+        let fg = GetForegroundWindow();
+        let fg_thread = if fg.is_null() { 0 } else { GetWindowThreadProcessId(fg, null_mut()) };
+        let me = GetCurrentThreadId();
+        let attached = fg_thread != 0 && fg_thread != me && AttachThreadInput(me, fg_thread, 1) != 0;
+        SetForegroundWindow(hwnd);
+        if attached {
+            AttachThreadInput(me, fg_thread, 0);
+        }
+    }
+}
+
+/// Incolla `text` nella finestra `target` (quella in primo piano all'inizio della registrazione; 0 = quella attuale)
+/// tramite appunti + scorciatoia di incolla. Se la finestra non e' piu' raggiungibile non incolla da nessuna parte:
+/// il testo resta negli appunti.
+pub fn paste_text(text: &str, paste: &str, restore: bool, send_enter: bool, target: crate::focus::Win) -> Result<(), String> {
     let previous = if restore { get_clipboard_text() } else { None };
     if !set_clipboard_text(text) {
         return Err(crate::i18n::t("err.clipboard"));
     }
     std::thread::sleep(std::time::Duration::from_millis(40));
+    let focus = crate::focus::ensure(target, foreground_window, window_exists, activate_window, || {
+        std::thread::sleep(std::time::Duration::from_millis(50))
+    });
+    if focus == crate::focus::Outcome::Lost {
+        return Err(crate::i18n::t("err.paste_target_lost"));
+    }
+    if focus == crate::focus::Outcome::Restored {
+        std::thread::sleep(std::time::Duration::from_millis(100)); // l'app deve riprendere il focus interno
+    }
     let (modifier, vk) = if paste.eq_ignore_ascii_case("shift+insert") {
         (VK_SHIFT, VK_INSERT)
     } else {
