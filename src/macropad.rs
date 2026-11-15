@@ -113,11 +113,11 @@ impl Action {
     }
 }
 
-/// Azioni di fabbrica: logo = normale, C = senza AI + Invio, V = solo trascrizione.
+/// Azioni di fabbrica: logo = normale (AI + Invio), C = solo AI (senza Invio), V = solo trascrizione.
 pub fn default_action(slot: Slot) -> Action {
     match slot {
         Slot::Logo => Action::Full,
-        Slot::C => Action::RawSend,
+        Slot::C => Action::Ai,
         Slot::V => Action::Raw,
     }
 }
@@ -401,10 +401,10 @@ mod tests {
 
     #[test]
     fn default_buttons_follow_the_requested_modes() {
-        // logo = normale (AI come l'app + Invio), C = senza AI + Invio, V = solo trascrizione
+        // logo = normale (AI come l'app + Invio), C = solo AI senza Invio, V = solo trascrizione
         let (logo, c, v) = (default_action(Slot::Logo), default_action(Slot::C), default_action(Slot::V));
         assert_eq!((logo.ai(), logo.enter()), (None, Some(true)));
-        assert_eq!((c.ai(), c.enter()), (Some(false), Some(true)));
+        assert_eq!((c.ai(), c.enter()), (Some(true), Some(false)));
         assert_eq!((v.ai(), v.enter()), (Some(false), Some(false)));
     }
 
@@ -423,7 +423,8 @@ mod tests {
     #[test]
     fn config_text_falls_back_to_the_default_of_each_button() {
         assert_eq!(action_for(Slot::Logo, "", "", ""), Action::Full);
-        assert_eq!(action_for(Slot::C, "", "x", ""), Action::RawSend);
+        assert_eq!(action_for(Slot::C, "", "x", ""), Action::Ai);
+        assert_eq!(action_for(Slot::C, "", "raw_send", ""), Action::RawSend);
         assert_eq!(action_for(Slot::V, "", "", "ai"), Action::Ai);
     }
 
