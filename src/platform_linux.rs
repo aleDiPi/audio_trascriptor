@@ -418,7 +418,7 @@ mod tests {
     #[ignore]
     fn paste_smoke() {
         let spec = std::env::var("PASTE_SPEC").unwrap_or_else(|_| "shift+insert".into());
-        paste_text("ciao dal test", &spec, false, true).unwrap();
+        paste_text("ciao dal test", &spec, false, true, 0).unwrap();
         std::thread::sleep(std::time::Duration::from_secs(2)); // il tempo di leggere gli appunti
     }
 
