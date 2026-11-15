@@ -129,7 +129,7 @@ impl Default for Config {
             auto_update: true,
             macropad: true,
             macropad_logo: "full".into(),
-            macropad_c: "raw_send".into(),
+            macropad_c: "raw".into(),
             macropad_v: "raw".into(),
             macropad_ids: Vec::new(),
             debug_log_text: false,

@@ -33,7 +33,7 @@ max_seconds = 120
 # ai (AI, no Enter), off. Also changeable from Settings, where the section only appears while the keyboard is connected.
 macropad = true
 macropad_logo = "full"
-macropad_c = "raw_send"
+macropad_c = "raw"
 macropad_v = "raw"
 # If the keyboard is not recognised by its name, add its USB ids here, e.g. macropad_ids = ["16c0:27db"]
 macropad_ids = []
