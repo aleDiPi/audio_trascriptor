@@ -404,6 +404,7 @@ no_mic = ""
 audio_format = ""
 # clipboard not accessible
 clipboard = ""
+paste_target_lost = ""
 # paste key not found on the keyboard
 paste_key = ""
 # no AI service ready (the key or the local model is missing: AI section of Settings)
